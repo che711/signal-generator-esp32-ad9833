@@ -87,8 +87,7 @@ void loop() {
         disp.drawMain(
             gen.freqLabel(),
             gen.waveLabel(),
-            gen.stepLabel(),
-            web.isConnected()
+            gen.stepLabel()
         );
         lastDrawMs = now;
         needRedraw = false;

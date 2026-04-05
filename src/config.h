@@ -2,8 +2,8 @@
 
 // ── WiFi credentials ──────────────────────────────────────
 // Замените на свои данные Wi-Fi
-#define WIFI_SSID     "ВашWiFi"
-#define WIFI_PASSWORD "ВашПароль"
+#define WIFI_SSID     "SkyNet"
+#define WIFI_PASSWORD "password"
 
 // ── Web server port ───────────────────────────────────────
 #define WEB_PORT 80
