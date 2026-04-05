@@ -2,11 +2,13 @@
 #include "generator.h"
 #include "encoder.h"
 #include "display.h"
+#include "webui.h"
 
 // ── Objects ───────────────────────────────────────────────
 SignalGenerator gen;
 Encoder         enc;
 Display         disp;
+WebUI           web(gen);
 
 // ── Acceleration multiplier for fast spin ────────────────
 static const int ACCEL_MULTIPLIER = 10;
@@ -25,18 +27,29 @@ void setup() {
     gen.begin();
     enc.begin();
 
+    // WiFi + Web server
+    web.begin();
+
+    // Show IP on OLED for 3 seconds
+    if (web.isConnected()) {
+        disp.drawIP(web.ipAddress());
+        delay(3000);
+    }
+
     Serial.println("[DDS Generator] ready");
     needRedraw = true;
 }
 
 void loop() {
+    // Handle web requests first
+    web.handle();
+
+    // Handle encoder
     EncoderEvent ev = enc.poll();
 
     switch (ev) {
 
         case ENC_CW: {
-            // Clockwise → frequency up
-            // Fast spin = bigger step
             int mult = enc.isFast() ? ACCEL_MULTIPLIER : 1;
             for (int i = 0; i < mult; i++) gen.stepUp();
             needRedraw = true;
@@ -45,7 +58,6 @@ void loop() {
         }
 
         case ENC_CCW: {
-            // Counter-clockwise → frequency down
             int mult = enc.isFast() ? ACCEL_MULTIPLIER : 1;
             for (int i = 0; i < mult; i++) gen.stepDown();
             needRedraw = true;
@@ -54,14 +66,12 @@ void loop() {
         }
 
         case ENC_CLICK:
-            // Short press → cycle waveform
             gen.nextWave();
             needRedraw = true;
             Serial.printf("[BTN] wave → %s\n", gen.waveLabel());
             break;
 
         case ENC_LONG_CLICK:
-            // Long press → cycle frequency step
             gen.nextStep();
             needRedraw = true;
             Serial.printf("[BTN] step → %s\n", gen.stepLabel());
@@ -71,13 +81,14 @@ void loop() {
             break;
     }
 
-    // Redraw display (throttled to max ~30 fps)
+    // Redraw display (throttled to ~30 fps)
     uint32_t now = millis();
     if (needRedraw && (now - lastDrawMs > 33)) {
         disp.drawMain(
             gen.freqLabel(),
             gen.waveLabel(),
-            gen.stepLabel()
+            gen.stepLabel(),
+            web.isConnected()
         );
         lastDrawMs = now;
         needRedraw = false;
