@@ -16,11 +16,8 @@ public:
     // Call every loop() — handles incoming HTTP requests
     void handle();
 
-    // True after successful WiFi connect
-    bool isConnected() const { return _connected; }
-
-    // IP as string for display
-    String ipAddress() const;
+    bool   isConnected() const { return _connected; }
+    String ipAddress()   const;
 
 private:
     SignalGenerator& _gen;
@@ -30,13 +27,12 @@ private:
     void _connectWiFi();
     void _registerRoutes();
 
-    // Route handlers
     void _handleRoot();
+    void _handleStatus();
     void _handleSetFreq();
     void _handleSetWave();
     void _handleSetStep();
-    void _handleStatus();
+    void _handleSetBPM();     // ← new
 
-    // HTML page (embedded)
     static const char _HTML[];
 };
