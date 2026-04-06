@@ -12,17 +12,24 @@ static const char* WAVE_LABELS[] = {
     "SINE", "TRI", "SQR", "SQR/2", "BEAT"
 };
 
-// ── Heartbeat pulse timings (ms) ──────────────────────────
-//   LUB: first heart sound, ~50 ms, lower frequency
-//   PAUSE1: brief gap between the two sounds, ~80 ms
-//   DUB: second heart sound, ~35 ms, higher frequency
-//   PAUSE2: diastolic rest — whatever is left to fill one beat
-static const uint32_t HB_LUB_MS    = 50;
-static const uint32_t HB_PAUSE1_MS = 80;
-static const uint32_t HB_DUB_MS    = 35;
+// ── ECG segment timings (ms) ──────────────────────────────
+//  Fixed segments sum: 80+100+50+110+160 = 500 ms
+//  At 70 BPM: period = 857 ms → TP_REST = 357 ms
+//  At 30 BPM: period = 2000ms → TP_REST = 1500ms
+//  At 200 BPM: period = 300ms → TP_REST must not go negative:
+//    floor at 10 ms
 
-static const float HB_LUB_FREQ = 40.0f;   // Hz — "lub" tone
-static const float HB_DUB_FREQ = 55.0f;   // Hz — "dub" tone
+static const uint32_t HB_P_MS     =  80;   // P-wave duration
+static const uint32_t HB_PQ_MS    = 100;   // PQ silence
+static const uint32_t HB_QRS_MS   =  50;   // QRS spike duration
+static const uint32_t HB_ST_MS    = 110;   // ST silence
+static const uint32_t HB_T_MS     = 160;   // T-wave duration
+static const uint32_t HB_FIXED_MS = HB_P_MS + HB_PQ_MS + HB_QRS_MS + HB_ST_MS + HB_T_MS; // 500
+
+// ECG segment frequencies
+static const float HB_P_FREQ   =  6.0f;   // P-wave:  slow, small
+static const float HB_QRS_FREQ = 28.0f;   // QRS:     fast, sharp
+static const float HB_T_FREQ   =  5.0f;   // T-wave:  slow, broad
 
 // ─────────────────────────────────────────────────────────
 
@@ -32,14 +39,14 @@ SignalGenerator::SignalGenerator()
       _wave(WAVE_SINE),
       _step(STEP_1KHZ),
       _bpm(BPM_DEFAULT),
-      _hbState(HB_LUB),
+      _hbState(HB_TP_REST),
       _hbStateMs(0)
 {}
 
 void SignalGenerator::begin() {
     SPI.begin(GEN_SCK_PIN, 12, GEN_MOSI_PIN, GEN_CS_PIN);
     _dds.begin();
-    _dds.setFrequency(_freq);
+    _dds.setFrequency(_freq, 0);
     _applyWave();
 }
 
@@ -48,22 +55,21 @@ void SignalGenerator::begin() {
 void SignalGenerator::setFrequency(float hz) {
     hz = constrain(hz, FREQ_MIN, FREQ_MAX);
     _freq = hz;
-    _dds.setFrequency(_freq);
+    _dds.setFrequency(_freq, 0);
 }
 
 void SignalGenerator::stepUp()   { setFrequency(_freq + getStepHz()); }
 void SignalGenerator::stepDown() { setFrequency(_freq - getStepHz()); }
 
-// ── Waveform / step cycling ───────────────────────────────
+// ── Waveform / step ───────────────────────────────────────
 
 void SignalGenerator::nextWave() {
     _wave = static_cast<WaveType>((_wave + 1) % WAVE_COUNT);
 
     if (_wave == WAVE_HEARTBEAT) {
-        // entering heartbeat — silence output until first LUB
-        _hbState   = HB_LUB;
+        _hbState   = HB_P_WAVE;
         _hbStateMs = millis();
-        _ddsOutput(false);
+        _hbSilence();
     } else {
         _applyWave();
     }
@@ -79,7 +85,7 @@ void SignalGenerator::setBPM(int bpm) {
     _bpm = constrain(bpm, BPM_MIN, BPM_MAX);
 }
 
-// ── Heartbeat tick (call every loop()) ───────────────────
+// ── ECG tick (call every loop()) ──────────────────────────
 
 void SignalGenerator::tickHeartbeat() {
     if (_wave != WAVE_HEARTBEAT) return;
@@ -87,45 +93,62 @@ void SignalGenerator::tickHeartbeat() {
     uint32_t now     = millis();
     uint32_t elapsed = now - _hbStateMs;
 
-    // Total beat period in ms, minus the three fixed segments
+    // TP_REST duration = what's left after fixed segments
     uint32_t beatMs   = 60000UL / (uint32_t)_bpm;
-    uint32_t pause2Ms = beatMs - HB_LUB_MS - HB_PAUSE1_MS - HB_DUB_MS;
-    if (pause2Ms < 10) pause2Ms = 10;  // safety floor
+    uint32_t tpRestMs = (beatMs > HB_FIXED_MS) ? (beatMs - HB_FIXED_MS) : 10;
 
     switch (_hbState) {
 
-        case HB_LUB:
-            _dds.setFrequency(HB_LUB_FREQ, 0);
-            _ddsOutput(true);
-            if (elapsed >= HB_LUB_MS) {
-                _ddsOutput(false);
-                _hbState   = HB_PAUSE1;
+        // P-wave: small slow sine bump
+        case HB_P_WAVE:
+            if (elapsed == 0) _hbSetSegment(HB_P_FREQ);
+            if (elapsed >= HB_P_MS) {
+                _hbSilence();
+                _hbState   = HB_PQ_SEG;
                 _hbStateMs = now;
             }
             break;
 
-        case HB_PAUSE1:
-            _ddsOutput(false);
-            if (elapsed >= HB_PAUSE1_MS) {
-                _hbState   = HB_DUB;
+        // PQ segment: flat baseline
+        case HB_PQ_SEG:
+            if (elapsed >= HB_PQ_MS) {
+                _hbState   = HB_QRS;
                 _hbStateMs = now;
             }
             break;
 
-        case HB_DUB:
-            _dds.setFrequency(HB_DUB_FREQ);
-            _ddsOutput(true);
-            if (elapsed >= HB_DUB_MS) {
-                _ddsOutput(false);
-                _hbState   = HB_PAUSE2;
+        // QRS complex: fast sine → looks like sharp spike on scope
+        case HB_QRS:
+            if (elapsed == 0) _hbSetSegment(HB_QRS_FREQ);
+            if (elapsed >= HB_QRS_MS) {
+                _hbSilence();
+                _hbState   = HB_ST_SEG;
                 _hbStateMs = now;
             }
             break;
 
-        case HB_PAUSE2:
-            _ddsOutput(false);
-            if (elapsed >= pause2Ms) {
-                _hbState   = HB_LUB;
+        // ST segment: flat baseline
+        case HB_ST_SEG:
+            if (elapsed >= HB_ST_MS) {
+                _hbState   = HB_T_WAVE;
+                _hbStateMs = now;
+            }
+            break;
+
+        // T-wave: broad slow sine bump
+        case HB_T_WAVE:
+            if (elapsed == 0) _hbSetSegment(HB_T_FREQ);
+            if (elapsed >= HB_T_MS) {
+                _hbSilence();
+                _hbState   = HB_TP_REST;
+                _hbStateMs = now;
+            }
+            break;
+
+        // TP rest: diastolic silence until next beat
+        case HB_TP_REST:
+            if (elapsed >= tpRestMs) {
+                _hbState   = HB_P_WAVE;
                 _hbStateMs = now;
             }
             break;
@@ -139,9 +162,7 @@ const char* SignalGenerator::waveLabel() const { return WAVE_LABELS[_wave]; }
 const char* SignalGenerator::stepLabel() const { return STEP_LABELS[_step]; }
 
 String SignalGenerator::freqLabel() const {
-    if (_wave == WAVE_HEARTBEAT) {
-        return String(_bpm) + " BPM";
-    }
+    if (_wave == WAVE_HEARTBEAT) return String(_bpm) + " BPM";
     float f = _freq;
     if      (f >= 1000000.0f) return String(f / 1000000.0f, 4) + " MHz";
     else if (f >= 1000.0f)    return String(f / 1000.0f,    3) + " kHz";
@@ -153,19 +174,21 @@ String SignalGenerator::freqLabel() const {
 
 void SignalGenerator::_applyWave() {
     switch (_wave) {
-        case WAVE_SINE:      _dds.setWave(0); break;  // AD9833_SINE
-        case WAVE_TRIANGLE:  _dds.setWave(4); break;  // AD9833_TRIANGLE
-        case WAVE_SQUARE:    _dds.setWave(2); break;  // AD9833_SQUARE1
-        case WAVE_SQUARE2:   _dds.setWave(3); break;  // AD9833_SQUARE2
-        case WAVE_HEARTBEAT: /* managed by tickHeartbeat */ break;
-        default:             _dds.setWave(0); break;
+        case WAVE_SINE:      _dds.setWave(1); break;   // AD9833_SINE
+        case WAVE_TRIANGLE:  _dds.setWave(4); break;   // AD9833_TRIANGLE
+        case WAVE_SQUARE:    _dds.setWave(2); break;   // AD9833_SQUARE1
+        case WAVE_SQUARE2:   _dds.setWave(3); break;   // AD9833_SQUARE2
+        case WAVE_HEARTBEAT: _hbSilence(); break;
+        default:             _dds.setWave(1); break;
     }
 }
 
-void SignalGenerator::_ddsOutput(bool on) {
-    if (on) {
-        _dds.setWave(1);   // AD9833_SINE — включить, частота уже установлена
-    } else {
-        _dds.setWave(0);   // AD9833_OFF — DAC на ноль, без глитча
-    }
+void SignalGenerator::_hbSetSegment(float freqHz) {
+    // Set frequency first, then enable output — avoids glitch
+    _dds.setFrequency(freqHz, 0);
+    _dds.setWave(1);               // AD9833_SINE = 1, also clears OFF
+}
+
+void SignalGenerator::_hbSilence() {
+    _dds.setWave(0);               // AD9833_OFF = 0 — DAC to mid-scale, no glitch
 }

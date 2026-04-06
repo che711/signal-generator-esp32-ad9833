@@ -14,9 +14,9 @@
 #define FREQ_MAX   12000000.0f
 
 // ── Heartbeat BPM limits ──────────────────────────────────
-#define BPM_MIN   30
-#define BPM_MAX  200
-#define BPM_DEFAULT 70
+#define BPM_MIN      30
+#define BPM_MAX     200
+#define BPM_DEFAULT  70
 
 // ── Waveform types ────────────────────────────────────────
 enum WaveType : uint8_t {
@@ -28,12 +28,14 @@ enum WaveType : uint8_t {
     WAVE_COUNT     = 5
 };
 
-// ── Heartbeat FSM states ──────────────────────────────────
+// ── Heartbeat FSM: ECG shape P -> PQ -> QRS -> ST -> T -> TP ──
 enum HBState : uint8_t {
-    HB_LUB    = 0,
-    HB_PAUSE1 = 1,
-    HB_DUB    = 2,
-    HB_PAUSE2 = 3
+    HB_P_WAVE  = 0,   // small slow bump   ~6 Hz  sine  80 ms
+    HB_PQ_SEG  = 1,   // silence                       100 ms
+    HB_QRS     = 2,   // sharp fast spike  ~28 Hz sine  50 ms
+    HB_ST_SEG  = 3,   // silence                       110 ms
+    HB_T_WAVE  = 4,   // broad slow bump   ~5 Hz  sine 160 ms
+    HB_TP_REST = 5    // diastolic silence (beat remainder)
 };
 
 // ── Frequency step decades ────────────────────────────────
@@ -52,34 +54,28 @@ enum FreqStep : uint8_t {
 class SignalGenerator {
 public:
     SignalGenerator();
-
     void begin();
 
-    // Frequency control
     void  setFrequency(float hz);
     void  stepUp();
     void  stepDown();
-
-    // Waveform / step cycling
     void  nextWave();
     void  nextStep();
 
-    // Heartbeat mode
-    void  tickHeartbeat();           // call every loop()
-    bool  isHeartbeat() const        { return _wave == WAVE_HEARTBEAT; }
+    // Heartbeat
+    void  tickHeartbeat();
+    bool  isHeartbeat() const      { return _wave == WAVE_HEARTBEAT; }
     void  setBPM(int bpm);
-    int   getBPM()  const            { return _bpm; }
+    int   getBPM()  const          { return _bpm; }
 
-    // Getters
-    float     getFrequency() const   { return _freq; }
-    WaveType  getWave()      const   { return _wave; }
-    FreqStep  getStep()      const   { return _step; }
+    float     getFrequency() const { return _freq; }
+    WaveType  getWave()      const { return _wave; }
+    FreqStep  getStep()      const { return _step; }
     float     getStepHz()    const;
 
-    // Human-readable labels
     const char* waveLabel() const;
     const char* stepLabel() const;
-    String      freqLabel() const;   // returns "XX BPM" in heartbeat mode
+    String      freqLabel() const;
 
 private:
     AD9833   _dds;
@@ -87,11 +83,11 @@ private:
     WaveType _wave;
     FreqStep _step;
 
-    // Heartbeat state
     int      _bpm;
     HBState  _hbState;
     uint32_t _hbStateMs;
 
     void _applyWave();
-    void _ddsOutput(bool on);   // enable / disable AD9833 output
+    void _hbSetSegment(float freqHz);  // start active segment at given freq
+    void _hbSilence();                  // mute output
 };
