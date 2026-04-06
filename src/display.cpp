@@ -61,3 +61,18 @@ void Display::drawMain(
 
     _u8g2.sendBuffer();
 }
+
+void Display::drawIP(const String& ipAddr) {
+    _u8g2.clearBuffer();
+
+    _u8g2.setFont(u8g2_font_logisoso16_tr);
+    _u8g2.drawStr(15, 28, "WiFi IP");
+
+    _u8g2.setFont(u8g2_font_6x10_tf);
+    int w = _u8g2.getStrWidth(ipAddr.c_str());
+    int x = (128 - w) / 2;
+    if (x < 0) x = 0;
+    _u8g2.drawStr(x, 50, ipAddr.c_str());
+
+    _u8g2.sendBuffer();
+}
