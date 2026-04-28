@@ -1,4 +1,4 @@
-# DDS Signal Generator — ESP32 + AD9833
+# DDS Signal Generator — ESP32 + AD9833 with Web server
 
 A compact, standalone function generator built with an ESP32 microcontroller
 and the AD9833 DDS module, controlled via a rotary encoder and displayed on a
@@ -78,7 +78,7 @@ AD9833 GND          → BNC shell
 ### PlatformIO (recommended)
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/signal-generator-esp32-ad9833
+git clone https://github.com/che711/signal-generator-esp32-ad9833
 cd signal-generator-esp32-ad9833
 pio run --target upload
 pio device monitor

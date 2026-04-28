@@ -10,12 +10,8 @@ class WebUI {
 public:
     WebUI(SignalGenerator& gen);
 
-    // Call once in setup() — connects WiFi and starts server
-    void begin();
-
-    // Call every loop() — handles incoming HTTP requests
-    void handle();
-
+    void   begin();
+    void   handle();
     bool   isConnected() const { return _connected; }
     String ipAddress()   const;
 
@@ -29,10 +25,11 @@ private:
 
     void _handleRoot();
     void _handleStatus();
+    void _handleSysinfo();    // ← new: ESP32 health + signal params
     void _handleSetFreq();
     void _handleSetWave();
     void _handleSetStep();
-    void _handleSetBPM();     // ← new
+    void _handleSetBPM();
 
     static const char _HTML[];
 };
