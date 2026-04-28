@@ -1,4 +1,4 @@
-# DDS Signal Generator — ESP32 + AD9833
+# DDS Signal Generator — ESP32 + AD9833 with Web server
 
 A compact, standalone function generator built with an ESP32 microcontroller
 and the AD9833 DDS module, controlled via a rotary encoder and displayed on a
