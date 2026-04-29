@@ -3,31 +3,30 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include <Wire.h>
-
-// ── I2C pins ──────────────────────────────────────────────
-#define OLED_SDA_PIN  21
-#define OLED_SCL_PIN  22
-#define OLED_ADDR     0x3C   // common SSD1306 address (try 0x3D if blank)
+#include "config.h"
 
 class Display {
 public:
     Display();
     void begin();
 
-    // Main screen: frequency + waveform + step
+    // Главный экран
     void drawMain(
         const String& freqStr,
         const char*   waveLabel,
-        const char*   stepLabel
+        const char*   stepLabel,
+        bool          wifiOn = false
     );
 
-    // Startup splash
+    // Показать IP после подключения к WiFi
+    void drawIP(const String& ip);
+
+    // Заставка при старте
     void drawSplash();
 
-    // IP address display
-    void drawIP(const String& ipAddr);
+    // Статус WiFi без перерисовки частоты (не используется в loop)
+    void drawConnecting(const String& ssid);
 
 private:
     U8G2_SSD1306_128X64_NONAME_F_HW_I2C _u8g2;
-    void _drawWaveIcon(uint8_t x, uint8_t y, const char* wave);
 };

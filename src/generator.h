@@ -3,35 +3,18 @@
 #include <Arduino.h>
 #include <AD9833.h>
 #include <SPI.h>
+#include <Preferences.h>
+#include "config.h"
 
-#define GEN_SCK_PIN   18
-#define GEN_MOSI_PIN  23
-#define GEN_CS_PIN     5
-
-#define FREQ_MIN       0.1f
-#define FREQ_MAX   12000000.0f
-
-#define BPM_MIN      30
-#define BPM_MAX     200
-#define BPM_DEFAULT  70
+#define FREQ_MIN     0.1f
+#define FREQ_MAX 12000000.0f
 
 enum WaveType : uint8_t {
-    WAVE_SINE      = 0,
-    WAVE_TRIANGLE  = 1,
-    WAVE_SQUARE    = 2,
-    WAVE_SQUARE2   = 3,
-    WAVE_HEARTBEAT = 4,
-    WAVE_COUNT     = 5
-};
-
-// ECG FSM: output is SET on state entry, not polled
-enum HBState : uint8_t {
-    HB_P_WAVE  = 0,   //  6 Hz sine  80 ms  — P-wave
-    HB_PQ_SEG  = 1,   // silence    100 ms  — PQ segment
-    HB_QRS     = 2,   // 28 Hz sine  50 ms  — QRS complex
-    HB_ST_SEG  = 3,   // silence    110 ms  — ST segment
-    HB_T_WAVE  = 4,   //  5 Hz sine 160 ms  — T-wave
-    HB_TP_REST = 5    // silence  (remainder) — diastole
+    WAVE_SINE     = 0,
+    WAVE_TRIANGLE = 1,
+    WAVE_SQUARE   = 2,
+    WAVE_SQUARE2  = 3,
+    WAVE_COUNT    = 4
 };
 
 enum FreqStep : uint8_t {
@@ -49,39 +32,36 @@ enum FreqStep : uint8_t {
 class SignalGenerator {
 public:
     SignalGenerator();
-    void begin();
+
+    void begin();                     // init SPI + load NVS
+    void saveSettings();             // сохранить в NVS
 
     void setFrequency(float hz);
+    void setWaveByIndex(int idx);    // ИСПРАВЛЕНО: прямая установка
+    void setStepByIndex(int idx);    // ИСПРАВЛЕНО: прямая установка
+
     void stepUp();
     void stepDown();
     void nextWave();
     void nextStep();
 
-    void tickHeartbeat();
-    bool isHeartbeat() const       { return _wave == WAVE_HEARTBEAT; }
-    void setBPM(int bpm);
-    int  getBPM()  const           { return _bpm; }
+    float      getFrequency() const { return _freq; }
+    WaveType   getWave()      const { return _wave; }
+    FreqStep   getStep()      const { return _step; }
+    float      getStepHz()    const;
 
-    float     getFrequency() const { return _freq; }
-    WaveType  getWave()      const { return _wave; }
-    FreqStep  getStep()      const { return _step; }
-    float     getStepHz()    const;
-
-    const char* waveLabel() const;
-    const char* stepLabel() const;
-    String      freqLabel() const;
+    const char* waveLabel()  const;
+    const char* stepLabel()  const;
+    String      freqLabel()  const;
 
 private:
-    AD9833   _dds;
-    float    _freq;
-    WaveType _wave;
-    FreqStep _step;
-
-    int      _bpm;
-    HBState  _hbState;
-    uint32_t _hbStateMs;
+    AD9833      _dds;
+    Preferences _prefs;
+    float       _freq;
+    WaveType    _wave;
+    FreqStep    _step;
+    uint32_t    _lastSaveMs;
 
     void _applyWave();
-    void _hbEnterState(HBState s);  // configure output + record timestamp
-    void _hbSilence();
+    void _loadSettings();
 };
