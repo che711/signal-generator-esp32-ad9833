@@ -1,7 +1,7 @@
 #include "webui.h"
 
 // ─────────────────────────────────────────────────────────
-// Embedded HTML
+// Embedded HTML — v4 UI (25% larger, better readability)
 // ─────────────────────────────────────────────────────────
 const char WebUI::_HTML[] PROGMEM = R"rawhtml(
 <!DOCTYPE html><html lang="en"><head>
@@ -10,68 +10,185 @@ const char WebUI::_HTML[] PROGMEM = R"rawhtml(
 <title>DDS Generator</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px 14px}
-h1{font-size:1.3rem;font-weight:700;color:#a78bfa;margin-bottom:4px;letter-spacing:.06em}
-.sub{font-size:.78rem;color:#64748b;margin-bottom:22px}
-.dot{width:7px;height:7px;border-radius:50%;background:#34d399;display:inline-block;margin-right:5px;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-.card{background:#1a1d2e;border:1px solid #2a2d45;border-radius:14px;padding:20px;width:100%;max-width:440px;margin-bottom:16px}
-.card h2{font-size:.7rem;font-weight:700;letter-spacing:.12em;color:#4a5180;text-transform:uppercase;margin-bottom:14px}
-.freq-big{font-size:2.6rem;font-weight:700;color:#a78bfa;text-align:center;padding:8px 0;font-variant-numeric:tabular-nums;letter-spacing:.02em}
-.row{display:flex;gap:10px;margin-top:12px}
-.freq-input{flex:1;padding:11px;border-radius:9px;border:2px solid #2a2d45;background:#11131f;color:#e2e8f0;font-size:1rem;text-align:center;outline:none;transition:border .15s}
-.freq-input:focus{border-color:#a78bfa}
-.btn{padding:11px 16px;border-radius:9px;border:none;font-size:.9rem;font-weight:600;cursor:pointer;transition:all .15s}
-.btn-purple{background:#4c1d95;color:#e2e8f0}.btn-purple:hover{background:#5b21b6}
-.btn-gray{background:#1e2335;color:#94a3b8;border:2px solid #2a2d45}.btn-gray:hover{border-color:#a78bfa;color:#a78bfa}
-.btn-green{background:#065f46;color:#34d399}.btn-green:hover{background:#047857}
-.wave-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-.wbtn{padding:13px 8px;border:2px solid #2a2d45;border-radius:10px;background:transparent;color:#94a3b8;font-size:.9rem;font-weight:500;cursor:pointer;transition:all .15s;text-align:center}
-.wbtn.active{border-color:#a78bfa;background:#2d1f5e;color:#c4b5fd}
-.wbtn:hover:not(.active){border-color:#4a5180;color:#e2e8f0}
-.wbtn .icon{display:block;font-size:1.1rem;margin-bottom:3px}
-.step-wrap{display:flex;flex-wrap:wrap;gap:7px;justify-content:center}
-.sbtn{padding:7px 12px;border:2px solid #2a2d45;border-radius:7px;background:transparent;color:#94a3b8;font-size:.78rem;cursor:pointer;transition:all .15s}
-.sbtn.active{border-color:#34d399;background:#0d2e22;color:#34d399}
-.sbtn:hover:not(.active){border-color:#4a5180;color:#e2e8f0}
-.info{display:flex;justify-content:space-between;font-size:.78rem;padding:5px 0;color:#64748b;border-bottom:1px solid #1e2335}
-.info:last-child{border:none}
-.info span:last-child{color:#a78bfa;font-weight:600}
-.save-row{display:flex;justify-content:flex-end;margin-top:10px}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#065f46;color:#34d399;padding:8px 20px;border-radius:8px;font-size:.85rem;opacity:0;transition:opacity .3s;pointer-events:none}
+:root{
+  --bg:#0b0d14;--surface:#13162a;--surface2:#1c2040;
+  --border:#2e3460;--border2:#3d4575;
+  --purple:#9d7ef5;--purple-d:#6d42d4;--purple-bg:#1e1545;
+  --green:#2dd4a0;--green-bg:#0a2e22;
+  --text:#dce4f5;--text2:#8892b0;--text3:#4a5575;
+}
+html{font-size:17px}
+body{
+  font-family:system-ui,-apple-system,sans-serif;
+  background:var(--bg);color:var(--text);
+  min-height:100vh;display:flex;flex-direction:column;
+  align-items:center;padding:24px 16px 48px;
+}
+.header{text-align:center;margin-bottom:28px}
+.header h1{
+  font-size:1.6rem;font-weight:800;letter-spacing:.08em;
+  color:var(--purple);margin-bottom:8px;
+}
+.badge{
+  display:inline-flex;align-items:center;gap:6px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:20px;padding:5px 14px;
+  font-size:.82rem;color:var(--text2);
+}
+.dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--green);box-shadow:0 0 6px var(--green);
+  animation:pulse 2s infinite;
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.2}}
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:18px;padding:26px;
+  width:100%;max-width:480px;margin-bottom:18px;
+}
+.card-title{
+  font-size:.72rem;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;
+  color:var(--text3);margin-bottom:18px;
+  display:flex;align-items:center;gap:10px;
+}
+.card-title::after{content:'';flex:1;height:1px;background:var(--border)}
+.freq-display{text-align:center;padding:8px 0 14px}
+.freq-value{
+  font-size:3.4rem;font-weight:800;color:var(--purple);
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1;
+}
+.freq-unit{font-size:1.4rem;font-weight:600;color:var(--text2);margin-left:5px}
+.freq-raw{font-size:.82rem;color:var(--text3);margin-top:6px}
+.input-row{display:flex;gap:10px;margin-top:16px}
+.freq-input{
+  flex:1;padding:14px 16px;border-radius:11px;
+  border:2px solid var(--border);background:var(--bg);
+  color:var(--text);font-size:1.1rem;text-align:center;
+  outline:none;transition:border .2s;
+}
+.freq-input:focus{border-color:var(--purple)}
+.freq-input::placeholder{color:var(--text3)}
+.btn{
+  padding:13px 20px;border-radius:11px;border:none;
+  font-size:.95rem;font-weight:700;cursor:pointer;
+  transition:all .15s;letter-spacing:.02em;
+}
+.btn-purple{background:var(--purple-d);color:#fff}
+.btn-purple:hover{background:var(--purple);transform:translateY(-1px)}
+.step-row{display:flex;gap:10px;margin-top:10px}
+.btn-step{
+  flex:1;padding:14px 8px;border-radius:11px;
+  border:2px solid var(--border);background:var(--surface2);
+  color:var(--text2);font-size:1rem;font-weight:600;
+  cursor:pointer;transition:all .15s;
+}
+.btn-step:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-bg)}
+.wave-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.wbtn{
+  padding:18px 10px 14px;border:2px solid var(--border);
+  border-radius:13px;background:transparent;
+  color:var(--text2);font-size:.95rem;font-weight:600;
+  cursor:pointer;transition:all .15s;text-align:center;
+}
+.wbtn svg{display:block;margin:0 auto 9px;width:38px;height:22px}
+.wbtn.active{border-color:var(--purple);background:var(--purple-bg);color:var(--purple)}
+.wbtn:hover:not(.active){border-color:var(--border2);color:var(--text)}
+.step-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.sbtn{
+  padding:13px 6px;border:2px solid var(--border);
+  border-radius:10px;background:transparent;
+  color:var(--text2);font-size:.85rem;font-weight:600;
+  cursor:pointer;transition:all .15s;text-align:center;
+}
+.sbtn.active{border-color:var(--green);background:var(--green-bg);color:var(--green)}
+.sbtn:hover:not(.active){border-color:var(--border2);color:var(--text)}
+.stat-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:13px 0;border-bottom:1px solid var(--border);font-size:.95rem;
+}
+.stat-row:last-of-type{border:none}
+.stat-label{color:var(--text2);font-weight:500}
+.stat-val{color:var(--purple);font-weight:700;font-size:1rem;font-variant-numeric:tabular-nums}
+.btn-save{
+  width:100%;padding:15px;border-radius:12px;
+  border:2px solid var(--green-bg);
+  background:var(--green-bg);color:var(--green);
+  font-size:1rem;font-weight:700;cursor:pointer;
+  transition:all .15s;letter-spacing:.03em;margin-top:16px;
+}
+.btn-save:hover{background:var(--green);color:#051a12;border-color:var(--green)}
+.toast{
+  position:fixed;bottom:24px;left:50%;
+  transform:translateX(-50%);
+  padding:11px 24px;border-radius:10px;
+  font-size:.9rem;font-weight:600;
+  opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;
+}
+.toast.ok{background:var(--green-bg);color:var(--green);border:1px solid var(--green)}
+.toast.err{background:#2e0a0a;color:#f87171;border:1px solid #f87171}
 .toast.show{opacity:1}
 </style>
 </head>
 <body>
-<h1>&#9644; DDS Signal Generator</h1>
-<p class="sub"><span class="dot"></span>ESP32 + AD9833</p>
+
+<div class="header">
+  <h1>&#9646; DDS GENERATOR</h1>
+  <div><span class="badge"><span class="dot"></span>ESP32 + AD9833 &middot; Online</span></div>
+</div>
 
 <div class="card">
-  <h2>Frequency</h2>
-  <div class="freq-big" id="freqBig">—</div>
-  <div class="row">
-    <input class="freq-input" type="number" id="freqIn" placeholder="Hz" min="0.1" max="12000000">
+  <div class="card-title">Frequency</div>
+  <div class="freq-display">
+    <div>
+      <span class="freq-value" id="fVal">—</span><span class="freq-unit" id="fUnit"></span>
+    </div>
+    <div class="freq-raw" id="fRaw">—</div>
+  </div>
+  <div class="input-row">
+    <input class="freq-input" type="number" id="freqIn"
+           placeholder="Enter Hz" min="0.1" max="12000000">
     <button class="btn btn-purple" onclick="setFreq()">Set</button>
   </div>
-  <div class="row">
-    <button class="btn btn-gray" style="flex:1" onclick="nudge(-1)">&#9664; Step</button>
-    <button class="btn btn-gray" style="flex:1" onclick="nudge(1)">Step &#9654;</button>
+  <div class="step-row">
+    <button class="btn-step" onclick="nudge(-1)">&#9664;&ensp;Step</button>
+    <button class="btn-step" onclick="nudge(1)">Step&ensp;&#9654;</button>
   </div>
 </div>
 
 <div class="card">
-  <h2>Waveform</h2>
+  <div class="card-title">Waveform</div>
   <div class="wave-grid">
-    <button class="wbtn" id="w0" onclick="setWave(0)"><span class="icon">&#8767;</span>Sine</button>
-    <button class="wbtn" id="w1" onclick="setWave(1)"><span class="icon">/\/\</span>Triangle</button>
-    <button class="wbtn" id="w2" onclick="setWave(2)"><span class="icon">&#8988;</span>Square</button>
-    <button class="wbtn" id="w3" onclick="setWave(3)"><span class="icon">&#8988;</span>Square /2</button>
+    <button class="wbtn" id="w0" onclick="setWave(0)">
+      <svg viewBox="0 0 38 22" fill="none">
+        <path d="M2 11 C7 2,12 2,19 11 C26 20,31 20,36 11"
+              stroke="#8892b0" stroke-width="2.2" stroke-linecap="round"/>
+      </svg>Sine
+    </button>
+    <button class="wbtn" id="w1" onclick="setWave(1)">
+      <svg viewBox="0 0 38 22" fill="none">
+        <polyline points="2,19 10,3 19,19 28,3 36,19"
+                  stroke="#8892b0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>Triangle
+    </button>
+    <button class="wbtn" id="w2" onclick="setWave(2)">
+      <svg viewBox="0 0 38 22" fill="none">
+        <polyline points="2,19 2,4 19,4 19,19 19,4 36,4 36,19"
+                  stroke="#8892b0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>Square
+    </button>
+    <button class="wbtn" id="w3" onclick="setWave(3)">
+      <svg viewBox="0 0 38 22" fill="none">
+        <polyline points="2,19 2,4 11,4 11,19 11,4 19,4 19,19 19,4 28,4 28,19"
+                  stroke="#8892b0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>Square /2
+    </button>
   </div>
 </div>
 
 <div class="card">
-  <h2>Frequency Step</h2>
-  <div class="step-wrap">
+  <div class="card-title">Frequency Step</div>
+  <div class="step-grid">
     <button class="sbtn" id="s0" onclick="setStep(0)">0.1 Hz</button>
     <button class="sbtn" id="s1" onclick="setStep(1)">1 Hz</button>
     <button class="sbtn" id="s2" onclick="setStep(2)">10 Hz</button>
@@ -84,72 +201,89 @@ h1{font-size:1.3rem;font-weight:700;color:#a78bfa;margin-bottom:4px;letter-spaci
 </div>
 
 <div class="card">
-  <h2>Status</h2>
-  <div class="info"><span>Frequency</span><span id="iFreq">—</span></div>
-  <div class="info"><span>Waveform</span><span id="iWave">—</span></div>
-  <div class="info"><span>Step</span><span id="iStep">—</span></div>
-  <div class="save-row">
-    <button class="btn btn-green" onclick="saveSettings()">&#128190; Save to memory</button>
+  <div class="card-title">Status</div>
+  <div class="stat-row">
+    <span class="stat-label">Frequency</span>
+    <span class="stat-val" id="stFreq">—</span>
   </div>
+  <div class="stat-row">
+    <span class="stat-label">Waveform</span>
+    <span class="stat-val" id="stWave">—</span>
+  </div>
+  <div class="stat-row">
+    <span class="stat-label">Step</span>
+    <span class="stat-val" id="stStep" style="color:var(--green)">—</span>
+  </div>
+  <button class="btn-save" onclick="saveSettings()">&#128190;&ensp;Save to memory</button>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script>
-let curWave=0, curStep=4;
+let curStep = 4;
+const STEPS = [0.1,1,10,100,1000,10000,100000,1000000];
 
-function fmt(hz){
-  if(hz>=1e6) return (hz/1e6).toFixed(4)+' MHz';
-  if(hz>=1e3) return (hz/1e3).toFixed(3)+' kHz';
-  if(hz<1)    return hz.toFixed(1)+' Hz';
-  return Math.round(hz)+' Hz';
+function fmtSplit(hz){
+  if(hz>=1e6) return [(hz/1e6).toFixed(4),'MHz'];
+  if(hz>=1e3) return [(hz/1e3).toFixed(3),'kHz'];
+  if(hz<1)    return [hz.toFixed(1),'Hz'];
+  return [Math.round(hz).toString(),'Hz'];
 }
 
-function toast(msg,color='#34d399'){
+function toast(msg,type='ok'){
   const t=document.getElementById('toast');
-  t.textContent=msg; t.style.background=color==='err'?'#7f1d1d':'#065f46';
-  t.style.color=color==='err'?'#fca5a5':'#34d399';
-  t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'),2000);
+  t.textContent=msg; t.className='toast '+type+' show';
+  setTimeout(()=>t.classList.remove('show'),2200);
 }
 
 function applyStatus(d){
-  document.getElementById('freqBig').textContent=fmt(d.freq);
-  document.getElementById('freqIn').value=d.freq;
-  document.getElementById('iFreq').textContent=fmt(d.freq);
-  document.getElementById('iWave').textContent=d.wave;
-  document.getElementById('iStep').textContent=d.step;
-  for(let i=0;i<4;i++) document.getElementById('w'+i).classList.toggle('active',i===d.waveIdx);
-  for(let i=0;i<8;i++) document.getElementById('s'+i).classList.toggle('active',i===d.stepIdx);
-  curWave=d.waveIdx; curStep=d.stepIdx;
+  const [v,u]=fmtSplit(d.freq);
+  document.getElementById('fVal').textContent   = v;
+  document.getElementById('fUnit').textContent  = ' '+u;
+  document.getElementById('fRaw').textContent   = d.freq.toFixed(2)+' Hz';
+  document.getElementById('freqIn').value       = d.freq;
+  document.getElementById('stFreq').textContent = v+' '+u;
+  document.getElementById('stWave').textContent = d.wave;
+  document.getElementById('stStep').textContent = d.step;
+
+  for(let i=0;i<4;i++)
+    document.getElementById('w'+i).classList.toggle('active',i===d.waveIdx);
+  for(let i=0;i<8;i++)
+    document.getElementById('s'+i).classList.toggle('active',i===d.stepIdx);
+
+  document.querySelectorAll('.wbtn').forEach((btn,i)=>{
+    const c = i===d.waveIdx ? 'var(--purple)' : '#8892b0';
+    btn.querySelectorAll('path,polyline').forEach(el=>el.setAttribute('stroke',c));
+  });
+  curStep=d.stepIdx;
 }
 
 async function poll(){
-  try{ const r=await fetch('/status'); applyStatus(await r.json()); }catch(e){}
+  try{ const r=await fetch('/status'); if(r.ok) applyStatus(await r.json()); }
+  catch(e){}
 }
 
 async function setFreq(){
   const v=parseFloat(document.getElementById('freqIn').value);
-  if(isNaN(v)||v<0.1||v>12000000){toast('Invalid frequency','err');return;}
-  await fetch('/set/freq?v='+v);
-  poll();
+  if(isNaN(v)||v<0.1||v>12000000){toast('Valid: 0.1 Hz – 12 MHz','err');return;}
+  await fetch('/set/freq?v='+v); poll();
 }
 
 async function setWave(i){ await fetch('/set/wave?v='+i); poll(); }
 async function setStep(i){ await fetch('/set/step?v='+i); poll(); }
 
 async function nudge(dir){
-  const steps=[0.1,1,10,100,1000,10000,100000,1000000];
   const cur=parseFloat(document.getElementById('freqIn').value)||1000;
-  const nv=Math.max(0.1,Math.min(12000000,cur+dir*steps[curStep]));
-  await fetch('/set/freq?v='+nv);
-  poll();
+  const nv=Math.max(0.1,Math.min(12000000,cur+dir*STEPS[curStep]));
+  await fetch('/set/freq?v='+nv); poll();
 }
 
 async function saveSettings(){
-  await fetch('/save');
-  toast('Saved to memory!');
+  await fetch('/save'); toast('Saved to memory \u2713');
 }
+
+document.getElementById('freqIn')
+  .addEventListener('keydown',e=>{ if(e.key==='Enter') setFreq(); });
 
 poll();
 setInterval(poll,2000);
@@ -172,14 +306,12 @@ void WebUI::handle() {
     if (_connected) _server.handleClient();
 }
 
-// ── WiFi watchdog ─────────────────────────────────────────
 void WebUI::checkWiFi() {
     uint32_t now = millis();
     if (now - _lastWifiCheckMs < WIFI_RECONNECT_MS) return;
     _lastWifiCheckMs = now;
-
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("[WiFi] Connection lost, reconnecting...");
+        Serial.println("[WiFi] Lost, reconnecting...");
         _connected = false;
         WiFi.disconnect();
         delay(500);
@@ -192,52 +324,42 @@ String WebUI::ipAddress() const {
     return _connected ? WiFi.localIP().toString() : "No WiFi";
 }
 
-// ── Private ───────────────────────────────────────────────
-
 void WebUI::_connectWiFi() {
     Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
     uint32_t start = millis();
     while (WiFi.status() != WL_CONNECTED &&
            millis() - start < WIFI_CONNECT_TIMEOUT_MS) {
-        delay(400);
-        Serial.print(".");
+        delay(400); Serial.print(".");
     }
-
     if (WiFi.status() == WL_CONNECTED) {
         _connected = true;
-        Serial.printf("\n[WiFi] IP: %s\n",
-                      WiFi.localIP().toString().c_str());
+        Serial.printf("\n[WiFi] IP: %s\n", WiFi.localIP().toString().c_str());
     } else {
         _connected = false;
-        Serial.println("\n[WiFi] Failed — offline mode");
+        Serial.println("\n[WiFi] Failed — offline");
     }
 }
 
 void WebUI::_startServer() {
     if (MDNS.begin(MDNS_HOSTNAME))
         Serial.printf("[mDNS] http://%s.local\n", MDNS_HOSTNAME);
-
     _registerRoutes();
     _server.begin();
-    Serial.printf("[Web] http://%s\n",
-                  WiFi.localIP().toString().c_str());
+    Serial.printf("[Web] http://%s\n", WiFi.localIP().toString().c_str());
 }
 
 void WebUI::_registerRoutes() {
-    _server.on("/",         [this]() { _handleRoot();    });
-    _server.on("/status",   [this]() { _handleStatus();  });
-    _server.on("/set/freq", [this]() { _handleSetFreq(); });
-    _server.on("/set/wave", [this]() { _handleSetWave(); });
-    _server.on("/set/step", [this]() { _handleSetStep(); });
-    _server.on("/save",     [this]() { _handleSave();    });
+    _server.on("/",         [this](){ _handleRoot();    });
+    _server.on("/status",   [this](){ _handleStatus();  });
+    _server.on("/set/freq", [this](){ _handleSetFreq(); });
+    _server.on("/set/wave", [this](){ _handleSetWave(); });
+    _server.on("/set/step", [this](){ _handleSetStep(); });
+    _server.on("/save",     [this](){ _handleSave();    });
 }
 
-void WebUI::_handleRoot() {
-    _server.send_P(200, "text/html", _HTML);
-}
+void WebUI::_handleRoot()   { _server.send_P(200, "text/html", _HTML); }
 
 void WebUI::_handleStatus() {
     String j = "{";
@@ -253,34 +375,28 @@ void WebUI::_handleStatus() {
 
 void WebUI::_handleSetFreq() {
     if (_server.hasArg("v")) {
-        float f = _server.arg("v").toFloat();
-        _gen.setFrequency(f);
-        Serial.printf("[Web] freq → %.2f Hz\n", f);
+        _gen.setFrequency(_server.arg("v").toFloat());
+        Serial.printf("[Web] freq → %.2f Hz\n", _gen.getFrequency());
     }
     _server.send(200, "text/plain", "ok");
 }
 
-// ИСПРАВЛЕНО: использует setWaveByIndex — нет цикла, нет зависания
 void WebUI::_handleSetWave() {
     if (_server.hasArg("v")) {
-        int idx = _server.arg("v").toInt();
-        _gen.setWaveByIndex(idx);
+        _gen.setWaveByIndex(_server.arg("v").toInt());
         Serial.printf("[Web] wave → %s\n", _gen.waveLabel());
     }
     _server.send(200, "text/plain", "ok");
 }
 
-// ИСПРАВЛЕНО: использует setStepByIndex — нет цикла, нет зависания
 void WebUI::_handleSetStep() {
     if (_server.hasArg("v")) {
-        int idx = _server.arg("v").toInt();
-        _gen.setStepByIndex(idx);
+        _gen.setStepByIndex(_server.arg("v").toInt());
         Serial.printf("[Web] step → %s\n", _gen.stepLabel());
     }
     _server.send(200, "text/plain", "ok");
 }
 
-// НОВОЕ: сохранение настроек в NVS по кнопке из браузера
 void WebUI::_handleSave() {
     _gen.saveSettings();
     _server.send(200, "text/plain", "ok");
