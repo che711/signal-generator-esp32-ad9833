@@ -128,6 +128,17 @@ body{
 .toast.ok{background:var(--green-bg);color:var(--green);border:1px solid var(--green)}
 .toast.err{background:#2e0a0a;color:#f87171;border:1px solid #f87171}
 .toast.show{opacity:1}
+
+.sys-divider{height:1px;background:var(--border);margin:12px 0}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.bar-label{font-size:.82rem;color:var(--text2);width:68px;flex-shrink:0}
+.bar-track{flex:1;height:7px;border-radius:4px;background:var(--surface2);overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;transition:width .5s ease}
+.bar-cpu{background:var(--purple)}
+.bar-ram{background:#f5a623}
+.bar-free{background:var(--green)}
+.bar-pct{font-size:.82rem;font-weight:700;color:var(--text2);width:38px;text-align:right;flex-shrink:0}
+.bar-val{font-size:.82rem;font-weight:700;color:var(--green);width:60px;text-align:right;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -217,6 +228,46 @@ body{
   <button class="btn-save" onclick="saveSettings()">&#128190;&ensp;Save to memory</button>
 </div>
 
+<div class="card">
+  <div class="card-title">System</div>
+  <div class="stat-row">
+    <span class="stat-label">WiFi</span>
+    <span class="stat-val" id="sySsid" style="color:var(--green)">—</span>
+  </div>
+  <div class="stat-row">
+    <span class="stat-label">IP address</span>
+    <span class="stat-val" id="syIp">—</span>
+  </div>
+  <div class="stat-row">
+    <span class="stat-label">Signal</span>
+    <span class="stat-val" id="syRssi">—</span>
+  </div>
+  <div class="sys-divider"></div>
+  <div class="bar-row">
+    <div class="bar-label">CPU load</div>
+    <div class="bar-track"><div class="bar-fill bar-cpu" id="bCpu"></div></div>
+    <div class="bar-pct" id="pCpu">—</div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">RAM used</div>
+    <div class="bar-track"><div class="bar-fill bar-ram" id="bRam"></div></div>
+    <div class="bar-pct" id="pRam">—</div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">RAM free</div>
+    <div class="bar-track"><div class="bar-fill bar-free" id="bFree"></div></div>
+    <div class="bar-val" id="pFree">—</div>
+  </div>
+  <div class="stat-row" style="margin-top:12px">
+    <span class="stat-label">Chip temp</span>
+    <span class="stat-val" id="syTemp" style="color:#f5a623">—</span>
+  </div>
+  <div class="stat-row">
+    <span class="stat-label">Uptime</span>
+    <span class="stat-val" id="syUp" style="color:var(--text2)">—</span>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -256,6 +307,44 @@ function applyStatus(d){
     btn.querySelectorAll('path,polyline').forEach(el=>el.setAttribute('stroke',c));
   });
   curStep=d.stepIdx;
+
+  // System card
+  if(d.sys){
+    const s=d.sys;
+    document.getElementById('sySsid').textContent = s.ssid||'—';
+    document.getElementById('syIp').textContent   = s.ip||'—';
+
+    const rssiPct = Math.max(0,Math.min(100, 2*(s.rssi+100)));
+    const rssiBar = rssiPct<30?'#e24b4a':rssiPct<60?'#f5a623':'#2dd4a0';
+    document.getElementById('syRssi').textContent = s.rssi+'dBm ('+rssiPct+'%)';
+    document.getElementById('syRssi').style.color = rssiBar;
+
+    const cpuW = Math.min(100,s.cpu)+'%';
+    document.getElementById('bCpu').style.width = cpuW;
+    document.getElementById('pCpu').textContent = s.cpu+'%';
+    document.getElementById('bCpu').style.background =
+      s.cpu>80?'#e24b4a':s.cpu>50?'#f5a623':'var(--purple)';
+
+    const ramPct = Math.round((s.totalHeap - s.freeHeap) / s.totalHeap * 100);
+    document.getElementById('bRam').style.width = ramPct+'%';
+    document.getElementById('pRam').textContent = ramPct+'%';
+    document.getElementById('bRam').style.background =
+      ramPct>80?'#e24b4a':ramPct>60?'#f5a623':'#f5a623';
+
+    const freePct = Math.round(s.freeHeap / s.totalHeap * 100);
+    document.getElementById('bFree').style.width = freePct+'%';
+    document.getElementById('pFree').textContent = Math.round(s.freeHeap/1024)+'kB';
+
+    const t = s.temp.toFixed(1);
+    document.getElementById('syTemp').textContent = t+' °C';
+    document.getElementById('syTemp').style.color =
+      s.temp>70?'#e24b4a':s.temp>55?'#f5a623':'#f5a623';
+
+    const u = s.uptime;
+    const h=Math.floor(u/3600), m=Math.floor((u%3600)/60), sec=u%60;
+    document.getElementById('syUp').textContent =
+      (h?h+'h ':'')+m+'m '+sec+'s';
+  }
 }
 
 async function poll(){
@@ -298,6 +387,7 @@ WebUI::WebUI(SignalGenerator& gen)
 {}
 
 void WebUI::begin() {
+    _initCpuMon();
     _connectWiFi();
     if (_connected) _startServer();
 }
@@ -362,13 +452,29 @@ void WebUI::_registerRoutes() {
 void WebUI::_handleRoot()   { _server.send_P(200, "text/html", _HTML); }
 
 void WebUI::_handleStatus() {
+    uint32_t freeHeap  = ESP.getFreeHeap();
+    uint32_t totalHeap = ESP.getHeapSize();
+    float    temp      = temperatureRead();
+    int32_t  rssi      = WiFi.RSSI();
+    uint32_t uptime    = millis() / 1000;
+
     String j = "{";
-    j += "\"freq\":"    + String(_gen.getFrequency(), 2) + ",";
-    j += "\"wave\":\""  + String(_gen.waveLabel())       + "\",";
-    j += "\"step\":\""  + String(_gen.stepLabel())       + "\",";
-    j += "\"waveIdx\":" + String((int)_gen.getWave())    + ",";
-    j += "\"stepIdx\":" + String((int)_gen.getStep());
-    j += "}";
+    j += "\"freq\":" + String(_gen.getFrequency(), 2) + ",";
+    j += "\"wave\":\"" + String(_gen.waveLabel()) + "\",";
+    j += "\"step\":\"" + String(_gen.stepLabel()) + "\",";
+    j += "\"waveIdx\":" + String((int)_gen.getWave()) + ",";
+    j += "\"stepIdx\":" + String((int)_gen.getStep()) + ",";
+    j += "\"sys\":{";
+    j += "\"ssid\":\"" + String(WIFI_SSID) + "\",";
+    j += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
+    j += "\"rssi\":" + String(rssi) + ",";
+    j += "\"cpu\":" + String(_cpuLoad) + ",";
+    j += "\"freeHeap\":" + String(freeHeap) + ",";
+    j += "\"totalHeap\":" + String(totalHeap) + ",";
+    j += "\"temp\":" + String(temp, 1) + ",";
+    j += "\"uptime\":" + String(uptime);
+    j += "}}";
+
     _server.sendHeader("Access-Control-Allow-Origin", "*");
     _server.send(200, "application/json", j);
 }
@@ -400,4 +506,48 @@ void WebUI::_handleSetStep() {
 void WebUI::_handleSave() {
     _gen.saveSettings();
     _server.send(200, "text/plain", "ok");
+}
+
+// ── CPU load monitor ─────────────────────────────────────
+// Static counters incremented by FreeRTOS idle hooks (one per core)
+volatile uint32_t WebUI::_s_idle0 = 0;
+volatile uint32_t WebUI::_s_idle1 = 0;
+
+bool IRAM_ATTR WebUI::_idleHook0() { _s_idle0++; return false; }
+bool IRAM_ATTR WebUI::_idleHook1() { _s_idle1++; return false; }
+
+void WebUI::_initCpuMon() {
+    _cpuLoad      = 0;
+    _cpuSampleMs  = millis();
+    _cpuIdle0Prev = 0;
+    _cpuIdle1Prev = 0;
+    _cpuIdleMax   = 0;   // calibrated on first call
+
+    esp_register_freertos_idle_hook_for_cpu(_idleHook0, 0);
+    esp_register_freertos_idle_hook_for_cpu(_idleHook1, 1);
+}
+
+// Call every loop() — computes CPU load every 2 seconds
+void WebUI::updateCpuLoad() {
+    uint32_t now = millis();
+    if (now - _cpuSampleMs < 2000) return;
+
+    uint32_t i0 = _s_idle0;
+    uint32_t i1 = _s_idle1;
+    uint32_t delta0 = i0 - _cpuIdle0Prev;
+    uint32_t delta1 = i1 - _cpuIdle1Prev;
+    uint32_t idleTotal = delta0 + delta1;
+
+    // First call: calibrate (system is ~idle during begin())
+    if (_cpuIdleMax == 0) {
+        _cpuIdleMax = idleTotal;
+        if (_cpuIdleMax == 0) _cpuIdleMax = 1;
+    }
+
+    int load = 100 - (int)((float)idleTotal / _cpuIdleMax * 100.0f);
+    _cpuLoad = constrain(load, 0, 100);
+
+    _cpuIdle0Prev = i0;
+    _cpuIdle1Prev = i1;
+    _cpuSampleMs  = now;
 }
