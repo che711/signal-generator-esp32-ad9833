@@ -212,23 +212,6 @@ body{
 </div>
 
 <div class="card">
-  <div class="card-title">Status</div>
-  <div class="stat-row">
-    <span class="stat-label">Frequency</span>
-    <span class="stat-val" id="stFreq">—</span>
-  </div>
-  <div class="stat-row">
-    <span class="stat-label">Waveform</span>
-    <span class="stat-val" id="stWave">—</span>
-  </div>
-  <div class="stat-row">
-    <span class="stat-label">Step</span>
-    <span class="stat-val" id="stStep" style="color:var(--green)">—</span>
-  </div>
-  <button class="btn-save" onclick="saveSettings()">&#128190;&ensp;Save to memory</button>
-</div>
-
-<div class="card">
   <div class="card-title">System</div>
   <div class="stat-row">
     <span class="stat-label">WiFi</span>
@@ -267,6 +250,23 @@ body{
     <span class="stat-val" id="syUp" style="color:var(--text2)">—</span>
   </div>
 </div>
+<div class="card">
+  <div class="card-title">Status</div>
+  <div class="stat-row">
+    <span class="stat-label">Frequency</span>
+    <span class="stat-val" id="stFreq">—</span>
+  </div>
+  <div class="stat-row">
+    <span class="stat-label">Waveform</span>
+    <span class="stat-val" id="stWave">—</span>
+  </div>
+  <div class="stat-row">
+    <span class="stat-label">Step</span>
+    <span class="stat-val" id="stStep" style="color:var(--green)">—</span>
+  </div>
+  <button class="btn-save" onclick="saveSettings()">&#128190;&ensp;Save to memory</button>
+</div>
+
 
 <div class="toast" id="toast"></div>
 
