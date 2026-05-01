@@ -12,11 +12,7 @@ static const char* WAVE_LABELS[] = {
     "SINE","TRI","SQR","SQR/2"
 };
 
-// AD9833 v0.4.x wave constants
-#define AD9833_SINE     0
-#define AD9833_SQUARE1  2
-#define AD9833_SQUARE2  3
-#define AD9833_TRIANGLE 4
+// Use library's own constants: AD9833_SINE, AD9833_SQUARE1, AD9833_SQUARE2, AD9833_TRIANGLE, AD9833_OFF
 
 SignalGenerator::SignalGenerator()
     : _dds(GEN_CS_PIN),
