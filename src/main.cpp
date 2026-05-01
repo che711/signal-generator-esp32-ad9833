@@ -37,9 +37,10 @@ void setup() {
 }
 
 void loop() {
-    // Web + WiFi watchdog
+    // Web + WiFi watchdog + CPU sampling
     web.handle();
     web.checkWiFi();
+    web.updateCpuLoad();
 
     // Encoder
     bool changed = false;
@@ -93,7 +94,9 @@ void loop() {
             gen.freqLabel(),
             gen.waveLabel(),
             gen.stepLabel(),
-            web.isConnected()
+            web.isConnected(),
+            String(WIFI_SSID),
+            web.ipAddress()
         );
         lastDrawMs = now;
         needRedraw = false;
