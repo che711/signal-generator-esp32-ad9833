@@ -12,14 +12,11 @@ static const char* WAVE_LABELS[] = {
     "SINE","TRI","SQR","SQR/2"
 };
 
-// Use library's own constants: AD9833_SINE, AD9833_SQUARE1, AD9833_SQUARE2, AD9833_TRIANGLE, AD9833_OFF
-
 SignalGenerator::SignalGenerator()
     : _dds(GEN_CS_PIN),
       _freq(1000.0f),
       _wave(WAVE_SINE),
-      _step(STEP_1KHZ),
-      _lastSaveMs(0)
+      _step(STEP_1KHZ)
 {}
 
 void SignalGenerator::begin() {
@@ -35,34 +32,43 @@ void SignalGenerator::begin() {
 // ── NVS ───────────────────────────────────────────────────
 
 void SignalGenerator::_loadSettings() {
-    _prefs.begin(NVS_NAMESPACE, true);  // read-only
-    _freq = _prefs.getFloat("freq", 1000.0f);
-    _wave = (WaveType)_prefs.getUChar("wave", 0);
-    _step = (FreqStep)_prefs.getUChar("step", 4);
+    _prefs.begin(NVS_NAMESPACE, true);
+    float    f = _prefs.getFloat("freq", 1000.0f);
+    uint8_t  w = _prefs.getUChar("wave", 0);
+    uint8_t  s = _prefs.getUChar("step", 4);
     _prefs.end();
 
-    // Clamp loaded values
-    _freq = constrain(_freq, FREQ_MIN, FREQ_MAX);
-    if ((int)_wave >= WAVE_COUNT) _wave = WAVE_SINE;
-    if ((int)_step >= STEP_COUNT) _step = STEP_1KHZ;
+    _freq = constrain(f, FREQ_MIN, FREQ_MAX);
+    _wave = (w < WAVE_COUNT) ? (WaveType)w : WAVE_SINE;
+    _step = (s < STEP_COUNT) ? (FreqStep)s : STEP_1KHZ;
     Serial.println("[GEN] Settings loaded from NVS");
 }
 
 void SignalGenerator::saveSettings() {
-    _prefs.begin(NVS_NAMESPACE, false);  // read-write
-    _prefs.putFloat("freq", _freq);
-    _prefs.putUChar("wave", (uint8_t)_wave);
-    _prefs.putUChar("step", (uint8_t)_step);
+    _prefs.begin(NVS_NAMESPACE, false);
+    bool changed = false;
+
+    // Пишем только если значение изменилось — экономим циклы записи Flash
+    if (_prefs.getFloat("freq", -1.0f) != _freq)
+        { _prefs.putFloat("freq", _freq); changed = true; }
+    if (_prefs.getUChar("wave", 255) != (uint8_t)_wave)
+        { _prefs.putUChar("wave", (uint8_t)_wave); changed = true; }
+    if (_prefs.getUChar("step", 255) != (uint8_t)_step)
+        { _prefs.putUChar("step", (uint8_t)_step); changed = true; }
+
     _prefs.end();
-    Serial.println("[GEN] Settings saved to NVS");
+    if (changed) Serial.println("[GEN] Settings saved to NVS");
+    else         Serial.println("[GEN] NVS: nothing changed, skip write");
 }
 
 // ── Frequency ─────────────────────────────────────────────
 
-void SignalGenerator::setFrequency(float hz) {
+float SignalGenerator::setFrequency(float hz) {
     hz = constrain(hz, FREQ_MIN, FREQ_MAX);
+    if (hz == _freq) return _freq;
     _freq = hz;
     _dds.setFrequency(_freq);
+    return _freq;
 }
 
 void SignalGenerator::stepUp()   { setFrequency(_freq + getStepHz()); }
@@ -70,15 +76,16 @@ void SignalGenerator::stepDown() { setFrequency(_freq - getStepHz()); }
 
 // ── Wave ──────────────────────────────────────────────────
 
-// ИСПРАВЛЕНО: прямая установка по индексу, без цикла
-void SignalGenerator::setWaveByIndex(int idx) {
-    _wave = (WaveType)(idx % WAVE_COUNT);
+WaveType SignalGenerator::setWaveByIndex(int idx) {
+    WaveType w = (WaveType)(((idx % WAVE_COUNT) + WAVE_COUNT) % WAVE_COUNT);
+    if (w == _wave) return _wave;
+    _wave = w;
     _applyWave();
+    return _wave;
 }
 
 void SignalGenerator::nextWave() {
-    _wave = (WaveType)((_wave + 1) % WAVE_COUNT);
-    _applyWave();
+    setWaveByIndex((_wave + 1) % WAVE_COUNT);
 }
 
 void SignalGenerator::_applyWave() {
@@ -93,13 +100,14 @@ void SignalGenerator::_applyWave() {
 
 // ── Step ──────────────────────────────────────────────────
 
-// ИСПРАВЛЕНО: прямая установка по индексу, без цикла
-void SignalGenerator::setStepByIndex(int idx) {
-    _step = (FreqStep)(idx % STEP_COUNT);
+FreqStep SignalGenerator::setStepByIndex(int idx) {
+    FreqStep s = (FreqStep)(((idx % STEP_COUNT) + STEP_COUNT) % STEP_COUNT);
+    _step = s;
+    return _step;
 }
 
 void SignalGenerator::nextStep() {
-    _step = (FreqStep)((_step + 1) % STEP_COUNT);
+    setStepByIndex((_step + 1) % STEP_COUNT);
 }
 
 // ── Labels ────────────────────────────────────────────────
