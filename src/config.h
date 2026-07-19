@@ -1,7 +1,7 @@
 #pragma once
 
 // ── Wi-Fi ─────────────────────────────────────────────────
-#define WIFI_SSID      "network"
+#define WIFI_SSID      "SkyNet"
 #define WIFI_PASSWORD  "password"
 
 // ── Web server ────────────────────────────────────────────

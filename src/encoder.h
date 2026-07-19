@@ -19,14 +19,22 @@ public:
     bool isFast() const { return _fast; }
 
 private:
-    int      _lastClk;
-    uint32_t _lastTickMs;
+    // ── Rotation (interrupt-driven) ───────────────────────
+    int32_t  _accum;         // накопленные квадратурные переходы
+    uint32_t _lastDetentMs;
     bool     _fast;
 
+    // ── Button (polled) ───────────────────────────────────
     int      _lastBtnState;
     bool     _btnPending;
     uint32_t _btnPressMs;
 
     EncoderEvent _pollRotation();
     EncoderEvent _pollButton();
+
+    // ISR-часть: должна быть static
+    static void IRAM_ATTR _isr();
+    static volatile int32_t _s_delta;   // переходы, накопленные ISR
+    static volatile uint8_t _s_state;   // 4 бита: пред. + текущее состояние
+    static portMUX_TYPE     _s_mux;
 };

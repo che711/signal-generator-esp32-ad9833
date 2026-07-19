@@ -23,7 +23,10 @@ SignalGenerator::SignalGenerator()
 {}
 
 void SignalGenerator::begin() {
-    SPI.begin(GEN_SCK_PIN, 12, GEN_MOSI_PIN, GEN_CS_PIN);
+    // MISO не нужен (AD9833 — write-only), и GPIO12 — страппинг-пин (MTDI):
+    // подтяжка на нём при загрузке переключает напряжение флеша и может
+    // сломать загрузку. Поэтому MISO = -1.
+    SPI.begin(GEN_SCK_PIN, -1, GEN_MOSI_PIN, GEN_CS_PIN);
     _dds.begin();
     _loadSettings();
     _dds.setFrequency(_freq);
@@ -70,9 +73,11 @@ void SignalGenerator::stepDown() { setFrequency(_freq - getStepHz()); }
 
 // ── Wave ──────────────────────────────────────────────────
 
-// ИСПРАВЛЕНО: прямая установка по индексу, без цикла
+// Прямая установка по индексу. Отрицательный/некорректный idx игнорируем:
+// в C++ (-1 % 4) == -1, что дало бы выход за границы таблиц.
 void SignalGenerator::setWaveByIndex(int idx) {
-    _wave = (WaveType)(idx % WAVE_COUNT);
+    if (idx < 0 || idx >= WAVE_COUNT) return;
+    _wave = (WaveType)idx;
     _applyWave();
 }
 
@@ -93,9 +98,9 @@ void SignalGenerator::_applyWave() {
 
 // ── Step ──────────────────────────────────────────────────
 
-// ИСПРАВЛЕНО: прямая установка по индексу, без цикла
 void SignalGenerator::setStepByIndex(int idx) {
-    _step = (FreqStep)(idx % STEP_COUNT);
+    if (idx < 0 || idx >= STEP_COUNT) return;
+    _step = (FreqStep)idx;
 }
 
 void SignalGenerator::nextStep() {
@@ -120,6 +125,9 @@ String SignalGenerator::freqLabel() const {
     float f = _freq;
     if      (f >= 1000000.0f) return String(f / 1000000.0f, 4) + " MHz";
     else if (f >= 1000.0f)    return String(f / 1000.0f,    3) + " kHz";
-    else if (f < 1.0f)        return String(f, 1) + " Hz";
-    else                      return String((long)f) + " Hz";
+    // В диапазоне 0.1–999.9 Гц дробная часть значима (шаг 0.1 Гц):
+    // раньше 123.5 Гц отображалось как "123 Hz".
+    float frac = f - (long)f;
+    if (frac > 0.001f) return String(f, 1) + " Hz";
+    return String((long)f) + " Hz";
 }

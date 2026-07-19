@@ -15,7 +15,9 @@ public:
         const String& freqStr,
         const char*   waveLabel,
         const char*   stepLabel,
-        bool          wifiOn = false
+        bool          wifiOn = false,
+        const String& ssid   = "",
+        const String& ip     = ""
     );
 
     // Показать IP после подключения к WiFi
@@ -24,7 +26,7 @@ public:
     // Заставка при старте
     void drawSplash();
 
-    // Статус WiFi без перерисовки частоты (не используется в loop)
+    // Статус WiFi без перерисовки частоты
     void drawConnecting(const String& ssid);
 
 private:

@@ -277,8 +277,8 @@ const STEPS = [0.1,1,10,100,1000,10000,100000,1000000];
 function fmtSplit(hz){
   if(hz>=1e6) return [(hz/1e6).toFixed(4),'MHz'];
   if(hz>=1e3) return [(hz/1e3).toFixed(3),'kHz'];
-  if(hz<1)    return [hz.toFixed(1),'Hz'];
-  return [Math.round(hz).toString(),'Hz'];
+  // не терять дробную часть (шаг 0.1 Гц): 123.5 → "123.5", 123.0 → "123"
+  return [(hz % 1 > 1e-3 ? hz.toFixed(1) : Math.round(hz).toString()),'Hz'];
 }
 
 function toast(msg,type='ok'){
@@ -292,7 +292,10 @@ function applyStatus(d){
   document.getElementById('fVal').textContent   = v;
   document.getElementById('fUnit').textContent  = ' '+u;
   document.getElementById('fRaw').textContent   = d.freq.toFixed(2)+' Hz';
-  document.getElementById('freqIn').value       = d.freq;
+  // Не затирать поле ввода, пока пользователь в нём печатает —
+  // раньше poll() каждые 2 c сбрасывал недонабранное значение
+  const fin=document.getElementById('freqIn');
+  if(document.activeElement!==fin) fin.value=d.freq;
   document.getElementById('stFreq').textContent = v+' '+u;
   document.getElementById('stWave').textContent = d.wave;
   document.getElementById('stStep').textContent = d.step;
@@ -353,8 +356,10 @@ async function poll(){
 }
 
 async function setFreq(){
-  const v=parseFloat(document.getElementById('freqIn').value);
+  const el=document.getElementById('freqIn');
+  const v=parseFloat(el.value);
   if(isNaN(v)||v<0.1||v>12000000){toast('Valid: 0.1 Hz – 12 MHz','err');return;}
+  el.blur();                       // вернуть поле под управление poll()
   await fetch('/set/freq?v='+v); poll();
 }
 
@@ -383,7 +388,9 @@ setInterval(poll,2000);
 // ─────────────────────────────────────────────────────────
 
 WebUI::WebUI(SignalGenerator& gen)
-    : _gen(gen), _server(WEB_PORT), _connected(false), _lastWifiCheckMs(0)
+    : _gen(gen), _server(WEB_PORT), _connected(false),
+      _serverStarted(false), _mdnsStarted(false), _changedFlag(false),
+      _lastWifiCheckMs(0)
 {}
 
 void WebUI::begin() {
@@ -404,8 +411,11 @@ void WebUI::checkWiFi() {
         Serial.println("[WiFi] Lost, reconnecting...");
         _connected = false;
         WiFi.disconnect();
-        delay(500);
+        delay(100);
         _connectWiFi();
+        // БАГ был здесь: повторный _startServer() каждый реконнект заново
+        // регистрировал маршруты (WebServer::on() выделяет память под каждый
+        // handler → утечка) и вызывал MDNS.begin() поверх работающего.
         if (_connected) _startServer();
     }
 }
@@ -433,10 +443,18 @@ void WebUI::_connectWiFi() {
 }
 
 void WebUI::_startServer() {
-    if (MDNS.begin(MDNS_HOSTNAME))
+    // mDNS перезапускаем после реконнекта (иначе .local перестаёт отвечать)
+    if (_mdnsStarted) MDNS.end();
+    _mdnsStarted = MDNS.begin(MDNS_HOSTNAME);
+    if (_mdnsStarted)
         Serial.printf("[mDNS] http://%s.local\n", MDNS_HOSTNAME);
-    _registerRoutes();
-    _server.begin();
+
+    // Маршруты и сам сервер запускаем ровно один раз
+    if (!_serverStarted) {
+        _registerRoutes();
+        _server.begin();
+        _serverStarted = true;
+    }
     Serial.printf("[Web] http://%s\n", WiFi.localIP().toString().c_str());
 }
 
@@ -482,6 +500,7 @@ void WebUI::_handleStatus() {
 void WebUI::_handleSetFreq() {
     if (_server.hasArg("v")) {
         _gen.setFrequency(_server.arg("v").toFloat());
+        _changedFlag = true;
         Serial.printf("[Web] freq → %.2f Hz\n", _gen.getFrequency());
     }
     _server.send(200, "text/plain", "ok");
@@ -490,6 +509,7 @@ void WebUI::_handleSetFreq() {
 void WebUI::_handleSetWave() {
     if (_server.hasArg("v")) {
         _gen.setWaveByIndex(_server.arg("v").toInt());
+        _changedFlag = true;
         Serial.printf("[Web] wave → %s\n", _gen.waveLabel());
     }
     _server.send(200, "text/plain", "ok");
@@ -498,6 +518,7 @@ void WebUI::_handleSetWave() {
 void WebUI::_handleSetStep() {
     if (_server.hasArg("v")) {
         _gen.setStepByIndex(_server.arg("v").toInt());
+        _changedFlag = true;
         Serial.printf("[Web] step → %s\n", _gen.stepLabel());
     }
     _server.send(200, "text/plain", "ok");
@@ -517,11 +538,12 @@ bool IRAM_ATTR WebUI::_idleHook0() { _s_idle0++; return false; }
 bool IRAM_ATTR WebUI::_idleHook1() { _s_idle1++; return false; }
 
 void WebUI::_initCpuMon() {
-    _cpuLoad      = 0;
-    _cpuSampleMs  = millis();
-    _cpuIdle0Prev = 0;
-    _cpuIdle1Prev = 0;
-    _cpuIdleMax   = 0;   // calibrated on first call
+    _cpuLoad        = 0;
+    _cpuSampleMs    = millis();
+    _cpuIdle0Prev   = 0;
+    _cpuIdle1Prev   = 0;
+    _cpuIdleRateMax = 0.0f;
+    _cpuFirstSample = true;
 
     esp_register_freertos_idle_hook_for_cpu(_idleHook0, 0);
     esp_register_freertos_idle_hook_for_cpu(_idleHook1, 1);
@@ -530,24 +552,32 @@ void WebUI::_initCpuMon() {
 // Call every loop() — computes CPU load every 2 seconds
 void WebUI::updateCpuLoad() {
     uint32_t now = millis();
-    if (now - _cpuSampleMs < 2000) return;
+    uint32_t elapsed = now - _cpuSampleMs;
+    if (elapsed < 2000) return;
 
     uint32_t i0 = _s_idle0;
     uint32_t i1 = _s_idle1;
-    uint32_t delta0 = i0 - _cpuIdle0Prev;
-    uint32_t delta1 = i1 - _cpuIdle1Prev;
-    uint32_t idleTotal = delta0 + delta1;
-
-    // First call: calibrate (system is ~idle during begin())
-    if (_cpuIdleMax == 0) {
-        _cpuIdleMax = idleTotal;
-        if (_cpuIdleMax == 0) _cpuIdleMax = 1;
-    }
-
-    int load = 100 - (int)((float)idleTotal / _cpuIdleMax * 100.0f);
-    _cpuLoad = constrain(load, 0, 100);
-
+    uint32_t idleTotal = (i0 - _cpuIdle0Prev) + (i1 - _cpuIdle1Prev);
     _cpuIdle0Prev = i0;
     _cpuIdle1Prev = i1;
     _cpuSampleMs  = now;
+
+    // БАГ был здесь: baseline брался из первого интервала, который включал
+    // блокирующее подключение WiFi (до 8 с) — калибровка получалась
+    // случайной, и проценты дальше врали. Теперь:
+    //  1) нормируем по фактически прошедшему времени (тиков/мс);
+    //  2) первый интервал пропускаем;
+    //  3) baseline самокорректируется вверх, если система оказалась
+    //     ещё более "пустой", чем при калибровке.
+    float rate = (float)idleTotal / (float)elapsed;
+
+    if (_cpuFirstSample) {
+        _cpuFirstSample = false;
+        return;
+    }
+    if (rate > _cpuIdleRateMax) _cpuIdleRateMax = rate;
+    if (_cpuIdleRateMax <= 0.0f) return;
+
+    int load = 100 - (int)(rate / _cpuIdleRateMax * 100.0f);
+    _cpuLoad = constrain(load, 0, 100);
 }

@@ -37,9 +37,17 @@ void setup() {
 }
 
 void loop() {
-    // Web + WiFi watchdog
+    // Web + WiFi watchdog + CPU sampling
     web.handle();
     web.checkWiFi();
+    web.updateCpuLoad();
+
+    // БАГ был здесь: изменения из веб-интерфейса не обновляли OLED
+    // (needRedraw ставился только энкодером) и не автосохранялись
+    if (web.consumeChanged()) {
+        needRedraw = true;
+        lastSaveMs = millis();
+    }
 
     // Encoder
     bool changed = false;
@@ -93,7 +101,9 @@ void loop() {
             gen.freqLabel(),
             gen.waveLabel(),
             gen.stepLabel(),
-            web.isConnected()
+            web.isConnected(),
+            String(WIFI_SSID),
+            web.ipAddress()
         );
         lastDrawMs = now;
         needRedraw = false;

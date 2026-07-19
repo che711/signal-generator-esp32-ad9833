@@ -20,10 +20,21 @@ public:
     bool   isConnected() const { return _connected; }
     String ipAddress()   const;
 
+    // true один раз после изменения настроек через веб (для перерисовки
+    // OLED и запуска таймера автосохранения в main loop)
+    bool consumeChanged() {
+        bool c = _changedFlag;
+        _changedFlag = false;
+        return c;
+    }
+
 private:
     SignalGenerator& _gen;
     WebServer        _server;
     bool             _connected;
+    bool             _serverStarted;   // маршруты регистрируем ровно один раз
+    bool             _mdnsStarted;
+    bool             _changedFlag;
     uint32_t         _lastWifiCheckMs;
 
     // ── CPU load monitor ──────────────────────────────────
@@ -32,8 +43,9 @@ private:
     uint32_t _cpuSampleMs;
     uint32_t _cpuIdle0Prev;
     uint32_t _cpuIdle1Prev;
-    uint32_t _cpuIdleMax;    // baseline: ticks per 2s at 0% load
-    int      _cpuLoad;       // 0-100 %
+    float    _cpuIdleRateMax;  // baseline: idle-тиков/мс при ~0% загрузки
+    bool     _cpuFirstSample;  // первый интервал искажён — пропускаем
+    int      _cpuLoad;         // 0-100 %
 
     static bool IRAM_ATTR _idleHook0();
     static bool IRAM_ATTR _idleHook1();
