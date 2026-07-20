@@ -6,8 +6,8 @@
 #include <Preferences.h>
 #include "config.h"
 
-#define FREQ_MIN     0.1f
-#define FREQ_MAX 12000000.0f
+#define FREQ_MIN      0.1f
+#define FREQ_MAX  12000000.0f
 
 enum WaveType : uint8_t {
     WAVE_SINE     = 0,
@@ -33,12 +33,13 @@ class SignalGenerator {
 public:
     SignalGenerator();
 
-    void begin();                     // init SPI + load NVS
-    void saveSettings();             // сохранить в NVS
+    void begin();
+    void saveSettings();
 
-    void setFrequency(float hz);
-    void setWaveByIndex(int idx);    // ИСПРАВЛЕНО: прямая установка
-    void setStepByIndex(int idx);    // ИСПРАВЛЕНО: прямая установка
+    // Setters — возвращают реально установленное значение
+    float    setFrequency(float hz);
+    WaveType setWaveByIndex(int idx);
+    FreqStep setStepByIndex(int idx);
 
     void stepUp();
     void stepDown();
@@ -50,9 +51,9 @@ public:
     FreqStep   getStep()      const { return _step; }
     float      getStepHz()    const;
 
-    const char* waveLabel()  const;
-    const char* stepLabel()  const;
-    String      freqLabel()  const;
+    const char* waveLabel() const;
+    const char* stepLabel() const;
+    String      freqLabel() const;
 
 private:
     AD9833      _dds;
@@ -60,7 +61,6 @@ private:
     float       _freq;
     WaveType    _wave;
     FreqStep    _step;
-    uint32_t    _lastSaveMs;
 
     void _applyWave();
     void _loadSettings();

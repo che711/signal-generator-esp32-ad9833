@@ -54,10 +54,10 @@ void Encoder::begin() {
     attachInterrupt(digitalPinToInterrupt(ENC_DT_PIN),  _isr, CHANGE);
 }
 
-EncoderEvent Encoder::poll() {
-    EncoderEvent ev = _pollRotation();
-    if (ev != ENC_NONE) return ev;
-    return _pollButton();
+    _s_lastClk = digitalRead(ENC_CLK_PIN);
+
+    // Прерывание по любому изменению CLK
+    attachInterrupt(digitalPinToInterrupt(ENC_CLK_PIN), _isrClk, CHANGE);
 }
 
 EncoderEvent Encoder::_pollRotation() {
@@ -82,20 +82,20 @@ EncoderEvent Encoder::_pollRotation() {
     return (dir > 0) ? ENC_CW : ENC_CCW;
 }
 
+// ── Кнопка — программный дебаунс без delay() ─────────────
 EncoderEvent Encoder::_pollButton() {
     int btn = digitalRead(ENC_SW_PIN);
     uint32_t now = millis();
 
     if (btn == LOW && _lastBtnState == HIGH) {
-        delay(DEBOUNCE_MS);
-        if (digitalRead(ENC_SW_PIN) == LOW) {
+        if (now - _btnPressMs > DEBOUNCE_MS) {   // дебаунс нажатия
             _btnPressMs = now;
             _btnPending = true;
         }
     }
 
     if (btn == HIGH && _lastBtnState == LOW && _btnPending) {
-        _btnPending = false;
+        _btnPending   = false;
         _lastBtnState = btn;
         uint32_t held = now - _btnPressMs;
         return (held >= LONG_PRESS_MS) ? ENC_LONG_CLICK : ENC_CLICK;

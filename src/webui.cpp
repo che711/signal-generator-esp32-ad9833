@@ -1,7 +1,7 @@
 #include "webui.h"
 
 // ─────────────────────────────────────────────────────────
-// Embedded HTML — v4 UI (25% larger, better readability)
+// Embedded HTML — v5 (без изменений UI, только JS улучшен)
 // ─────────────────────────────────────────────────────────
 const char WebUI::_HTML[] PROGMEM = R"rawhtml(
 <!DOCTYPE html><html lang="en"><head>
@@ -128,7 +128,6 @@ body{
 .toast.ok{background:var(--green-bg);color:var(--green);border:1px solid var(--green)}
 .toast.err{background:#2e0a0a;color:#f87171;border:1px solid #f87171}
 .toast.show{opacity:1}
-
 .sys-divider{height:1px;background:var(--border);margin:12px 0}
 .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
 .bar-label{font-size:.82rem;color:var(--text2);width:68px;flex-shrink:0}
@@ -158,7 +157,7 @@ body{
   </div>
   <div class="input-row">
     <input class="freq-input" type="number" id="freqIn"
-           placeholder="Enter Hz" min="0.1" max="12000000">
+           placeholder="Enter Hz" min="0.1" max="12000000" step="any">
     <button class="btn btn-purple" onclick="setFreq()">Set</button>
   </div>
   <div class="step-row">
@@ -250,6 +249,7 @@ body{
     <span class="stat-val" id="syUp" style="color:var(--text2)">—</span>
   </div>
 </div>
+
 <div class="card">
   <div class="card-title">Status</div>
   <div class="stat-row">
@@ -266,7 +266,6 @@ body{
   </div>
   <button class="btn-save" onclick="saveSettings()">&#128190;&ensp;Save to memory</button>
 </div>
-
 
 <div class="toast" id="toast"></div>
 
@@ -288,6 +287,7 @@ function toast(msg,type='ok'){
 }
 
 function applyStatus(d){
+  // Частота — берём реально установленное значение из ответа сервера
   const [v,u]=fmtSplit(d.freq);
   document.getElementById('fVal').textContent   = v;
   document.getElementById('fUnit').textContent  = ' '+u;
@@ -311,7 +311,6 @@ function applyStatus(d){
   });
   curStep=d.stepIdx;
 
-  // System card
   if(d.sys){
     const s=d.sys;
     document.getElementById('sySsid').textContent = s.ssid||'—';
@@ -328,31 +327,38 @@ function applyStatus(d){
     document.getElementById('bCpu').style.background =
       s.cpu>80?'#e24b4a':s.cpu>50?'#f5a623':'var(--purple)';
 
-    const ramPct = Math.round((s.totalHeap - s.freeHeap) / s.totalHeap * 100);
+    const ramPct = Math.round((s.totalHeap-s.freeHeap)/s.totalHeap*100);
     document.getElementById('bRam').style.width = ramPct+'%';
     document.getElementById('pRam').textContent = ramPct+'%';
-    document.getElementById('bRam').style.background =
-      ramPct>80?'#e24b4a':ramPct>60?'#f5a623':'#f5a623';
 
-    const freePct = Math.round(s.freeHeap / s.totalHeap * 100);
+    const freePct = Math.round(s.freeHeap/s.totalHeap*100);
     document.getElementById('bFree').style.width = freePct+'%';
     document.getElementById('pFree').textContent = Math.round(s.freeHeap/1024)+'kB';
 
-    const t = s.temp.toFixed(1);
-    document.getElementById('syTemp').textContent = t+' °C';
+    document.getElementById('syTemp').textContent = s.temp.toFixed(1)+' °C';
     document.getElementById('syTemp').style.color =
-      s.temp>70?'#e24b4a':s.temp>55?'#f5a623':'#f5a623';
+      s.temp>70?'#e24b4a':'#f5a623';
 
-    const u = s.uptime;
-    const h=Math.floor(u/3600), m=Math.floor((u%3600)/60), sec=u%60;
+    const u=s.uptime;
+    const h=Math.floor(u/3600),m=Math.floor((u%3600)/60),sec=u%60;
     document.getElementById('syUp').textContent =
       (h?h+'h ':'')+m+'m '+sec+'s';
   }
 }
 
 async function poll(){
-  try{ const r=await fetch('/status'); if(r.ok) applyStatus(await r.json()); }
-  catch(e){}
+  try{
+    const r=await fetch('/status');
+    if(r.ok) applyStatus(await r.json());
+  }catch(e){}
+}
+
+async function api(url){
+  try{
+    const r=await fetch(url);
+    if(!r.ok){ toast('Error '+r.status,'err'); return null; }
+    return await r.json();
+  }catch(e){ toast('No connection','err'); return null; }
 }
 
 async function setFreq(){
@@ -363,17 +369,27 @@ async function setFreq(){
   await fetch('/set/freq?v='+v); poll();
 }
 
-async function setWave(i){ await fetch('/set/wave?v='+i); poll(); }
-async function setStep(i){ await fetch('/set/step?v='+i); poll(); }
+async function setWave(i){
+  const d=await api('/set/wave?v='+i);
+  if(d) applyStatus(d);
+}
+
+async function setStep(i){
+  const d=await api('/set/step?v='+i);
+  if(d) applyStatus(d);
+}
 
 async function nudge(dir){
   const cur=parseFloat(document.getElementById('freqIn').value)||1000;
   const nv=Math.max(0.1,Math.min(12000000,cur+dir*STEPS[curStep]));
-  await fetch('/set/freq?v='+nv); poll();
+  const d=await api('/set/freq?v='+nv);
+  if(d) applyStatus(d);
 }
 
 async function saveSettings(){
-  await fetch('/save'); toast('Saved to memory \u2713');
+  const r=await fetch('/save');
+  if(r.ok) toast('Saved to memory \u2713');
+  else toast('Save failed','err');
 }
 
 document.getElementById('freqIn')
@@ -424,6 +440,18 @@ String WebUI::ipAddress() const {
     return _connected ? WiFi.localIP().toString() : "No WiFi";
 }
 
+// ── Мьютекс-хелпер ────────────────────────────────────────
+bool WebUI::_withGen(std::function<void()> fn, TickType_t timeout) {
+    if (xSemaphoreTake(_genMutex, timeout) == pdTRUE) {
+        fn();
+        xSemaphoreGive(_genMutex);
+        return true;
+    }
+    Serial.println("[Web] mutex timeout!");
+    return false;
+}
+
+// ── WiFi ──────────────────────────────────────────────────
 void WebUI::_connectWiFi() {
     Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
     WiFi.mode(WIFI_STA);
@@ -467,8 +495,12 @@ void WebUI::_registerRoutes() {
     _server.on("/save",     [this](){ _handleSave();    });
 }
 
-void WebUI::_handleRoot()   { _server.send_P(200, "text/html", _HTML); }
+void WebUI::_handleRoot() {
+    _server.send_P(200, "text/html", _HTML);
+}
 
+// ── Общий JSON-ответ с текущим состоянием ─────────────────
+// Используется всеми set-хендлерами и /status
 void WebUI::_handleStatus() {
     uint32_t freeHeap  = ESP.getFreeHeap();
     uint32_t totalHeap = ESP.getHeapSize();
@@ -476,21 +508,32 @@ void WebUI::_handleStatus() {
     int32_t  rssi      = WiFi.RSSI();
     uint32_t uptime    = millis() / 1000;
 
+    float freq = 0; int waveIdx = 0; int stepIdx = 0;
+    const char* waveLbl = ""; const char* stepLbl = "";
+
+    _withGen([&](){
+        freq    = _gen.getFrequency();
+        waveIdx = (int)_gen.getWave();
+        stepIdx = (int)_gen.getStep();
+        waveLbl = _gen.waveLabel();
+        stepLbl = _gen.stepLabel();
+    });
+
     String j = "{";
-    j += "\"freq\":" + String(_gen.getFrequency(), 2) + ",";
-    j += "\"wave\":\"" + String(_gen.waveLabel()) + "\",";
-    j += "\"step\":\"" + String(_gen.stepLabel()) + "\",";
-    j += "\"waveIdx\":" + String((int)_gen.getWave()) + ",";
-    j += "\"stepIdx\":" + String((int)_gen.getStep()) + ",";
+    j += "\"freq\":"      + String(freq, 2)    + ",";
+    j += "\"wave\":\""    + String(waveLbl)    + "\",";
+    j += "\"step\":\""    + String(stepLbl)    + "\",";
+    j += "\"waveIdx\":"   + String(waveIdx)    + ",";
+    j += "\"stepIdx\":"   + String(stepIdx)    + ",";
     j += "\"sys\":{";
-    j += "\"ssid\":\"" + String(WIFI_SSID) + "\",";
-    j += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
-    j += "\"rssi\":" + String(rssi) + ",";
-    j += "\"cpu\":" + String(_cpuLoad) + ",";
-    j += "\"freeHeap\":" + String(freeHeap) + ",";
-    j += "\"totalHeap\":" + String(totalHeap) + ",";
-    j += "\"temp\":" + String(temp, 1) + ",";
-    j += "\"uptime\":" + String(uptime);
+    j += "\"ssid\":\""    + String(WIFI_SSID)                + "\",";
+    j += "\"ip\":\""      + WiFi.localIP().toString()        + "\",";
+    j += "\"rssi\":"      + String(rssi)                     + ",";
+    j += "\"cpu\":"       + String(_cpuLoad)                 + ",";
+    j += "\"freeHeap\":"  + String(freeHeap)                 + ",";
+    j += "\"totalHeap\":" + String(totalHeap)                + ",";
+    j += "\"temp\":"      + String(temp, 1)                  + ",";
+    j += "\"uptime\":"    + String(uptime);
     j += "}}";
 
     _server.sendHeader("Access-Control-Allow-Origin", "*");
@@ -503,7 +546,11 @@ void WebUI::_handleSetFreq() {
         _changedFlag = true;
         Serial.printf("[Web] freq → %.2f Hz\n", _gen.getFrequency());
     }
-    _server.send(200, "text/plain", "ok");
+    float requested = _server.arg("v").toFloat();
+    _withGen([&](){ _gen.setFrequency(requested); });
+    Serial.printf("[Web] freq → %.2f Hz (requested %.2f)\n",
+                  _gen.getFrequency(), requested);
+    _handleStatus();   // вернуть реально установленное состояние
 }
 
 void WebUI::_handleSetWave() {
@@ -512,7 +559,14 @@ void WebUI::_handleSetWave() {
         _changedFlag = true;
         Serial.printf("[Web] wave → %s\n", _gen.waveLabel());
     }
-    _server.send(200, "text/plain", "ok");
+    int idx = _server.arg("v").toInt();
+    if (idx < 0 || idx >= WAVE_COUNT) {
+        _server.send(400, "text/plain", "wave index out of range");
+        return;
+    }
+    _withGen([&](){ _gen.setWaveByIndex(idx); });
+    Serial.printf("[Web] wave → %s\n", _gen.waveLabel());
+    _handleStatus();
 }
 
 void WebUI::_handleSetStep() {
@@ -521,19 +575,22 @@ void WebUI::_handleSetStep() {
         _changedFlag = true;
         Serial.printf("[Web] step → %s\n", _gen.stepLabel());
     }
-    _server.send(200, "text/plain", "ok");
+    int idx = _server.arg("v").toInt();
+    if (idx < 0 || idx >= STEP_COUNT) {
+        _server.send(400, "text/plain", "step index out of range");
+        return;
+    }
+    _withGen([&](){ _gen.setStepByIndex(idx); });
+    Serial.printf("[Web] step → %s\n", _gen.stepLabel());
+    _handleStatus();
 }
 
 void WebUI::_handleSave() {
-    _gen.saveSettings();
+    _withGen([&](){ _gen.saveSettings(); });
     _server.send(200, "text/plain", "ok");
 }
 
-// ── CPU load monitor ─────────────────────────────────────
-// Static counters incremented by FreeRTOS idle hooks (one per core)
-volatile uint32_t WebUI::_s_idle0 = 0;
-volatile uint32_t WebUI::_s_idle1 = 0;
-
+// ── CPU load monitor ──────────────────────────────────────
 bool IRAM_ATTR WebUI::_idleHook0() { _s_idle0++; return false; }
 bool IRAM_ATTR WebUI::_idleHook1() { _s_idle1++; return false; }
 
@@ -549,7 +606,6 @@ void WebUI::_initCpuMon() {
     esp_register_freertos_idle_hook_for_cpu(_idleHook1, 1);
 }
 
-// Call every loop() — computes CPU load every 2 seconds
 void WebUI::updateCpuLoad() {
     uint32_t now = millis();
     uint32_t elapsed = now - _cpuSampleMs;

@@ -11,10 +11,13 @@ enum EncoderEvent : uint8_t {
     ENC_LONG_CLICK = 4
 };
 
+// Энкодер на прерываниях — нет delay(), не блокирует loop()
 class Encoder {
 public:
     Encoder();
     void begin();
+
+    // Вызывать в loop() — читает накопленные события из очереди
     EncoderEvent poll();
     bool isFast() const { return _fast; }
 
@@ -29,7 +32,6 @@ private:
     bool     _btnPending;
     uint32_t _btnPressMs;
 
-    EncoderEvent _pollRotation();
     EncoderEvent _pollButton();
 
     // ISR-часть: должна быть static
