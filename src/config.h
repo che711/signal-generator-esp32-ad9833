@@ -31,7 +31,7 @@
 #define ENC_SW_PIN      32
 
 // ── Encoder timing ────────────────────────────────────────
-#define DEBOUNCE_MS        5
+#define BTN_DEBOUNCE_MS   20    // ms стабильности для кнопки (дребезг KY-040 5-30 мс)
 #define LONG_PRESS_MS    800
 #define ACCEL_THRESHOLD   80    // ms — быстрое вращение
 #define ACCEL_MULTIPLIER  10    // шаг × 10 при быстром вращении
