@@ -21,6 +21,8 @@ public:
 
     void drawIP(const String& ip);
     void drawSplash();
+
+    // Статус WiFi без перерисовки частоты
     void drawConnecting(const String& ssid);
 
 private:

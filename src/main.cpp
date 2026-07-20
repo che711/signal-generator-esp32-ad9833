@@ -71,9 +71,17 @@ void setup() {
 
 // ── loop — UI на ядре 1 ───────────────────────────────────
 void loop() {
-    static uint32_t lastDrawMs = 0;
-    static uint32_t lastSaveMs = 0;
-    static bool     needRedraw = true;
+    // Web + WiFi watchdog + CPU sampling
+    web.handle();
+    web.checkWiFi();
+    web.updateCpuLoad();
+
+    // БАГ был здесь: изменения из веб-интерфейса не обновляли OLED
+    // (needRedraw ставился только энкодером) и не автосохранялись
+    if (web.consumeChanged()) {
+        needRedraw = true;
+        lastSaveMs = millis();
+    }
 
     bool changed = false;
     EncoderEvent ev = enc.poll();
@@ -135,24 +143,15 @@ void loop() {
 
     // Перерисовка дисплея ~30 fps, только при изменениях
     uint32_t now = millis();
-    if (needRedraw && now - lastDrawMs > DISPLAY_REFRESH_MS) {
-        // Читаем состояние под мьютексом — снапшот для отрисовки
-        String freqStr, ssidStr, ipStr;
-        const char* waveLbl = "";
-        const char* stepLbl = "";
-        bool wifiOn = false;
-
-        if (xSemaphoreTake(genMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            freqStr = gen.freqLabel();
-            waveLbl = gen.waveLabel();
-            stepLbl = gen.stepLabel();
-            xSemaphoreGive(genMutex);
-        }
-        wifiOn = web->isConnected();
-        ssidStr = String(WIFI_SSID);
-        ipStr   = web->ipAddress();
-
-        disp.drawMain(freqStr, waveLbl, stepLbl, wifiOn, ssidStr, ipStr);
+    if (needRedraw && now - lastDrawMs > 33) {
+        disp.drawMain(
+            gen.freqLabel(),
+            gen.waveLabel(),
+            gen.stepLabel(),
+            web.isConnected(),
+            String(WIFI_SSID),
+            web.ipAddress()
+        );
         lastDrawMs = now;
         needRedraw = false;
     }
