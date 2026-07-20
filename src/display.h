@@ -10,7 +10,6 @@ public:
     Display();
     void begin();
 
-    // Главный экран
     void drawMain(
         const String& freqStr,
         const char*   waveLabel,
@@ -20,10 +19,7 @@ public:
         const String& ip     = ""
     );
 
-    // Показать IP после подключения к WiFi
     void drawIP(const String& ip);
-
-    // Заставка при старте
     void drawSplash();
 
     // Статус WiFi без перерисовки частоты

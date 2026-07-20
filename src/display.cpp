@@ -36,10 +36,10 @@ void Display::drawConnecting(const String& ssid) {
 void Display::drawIP(const String& ip) {
     _u8g2.clearBuffer();
     _u8g2.setFont(u8g2_font_6x10_tf);
-    _u8g2.drawStr(8, 14,  "WiFi connected!");
-    _u8g2.drawStr(8, 30,  "Open browser:");
-    _u8g2.drawStr(4, 48,  ip.c_str());
-    _u8g2.drawStr(4, 62,  "dds-gen.local");
+    _u8g2.drawStr(8, 14, "WiFi connected!");
+    _u8g2.drawStr(8, 30, "Open browser:");
+    _u8g2.drawStr(4, 48, ip.c_str());
+    _u8g2.drawStr(4, 62, "dds-gen.local");
     _u8g2.sendBuffer();
 }
 

@@ -55,10 +55,12 @@ void Encoder::begin() {
     attachInterrupt(digitalPinToInterrupt(ENC_DT_PIN),  _isr, CHANGE);
 }
 
+// Кнопка опрашивается первой: _pollRotation() смотрит на её
+// отфильтрованное состояние, чтобы гасить паразитные тики при клике
 EncoderEvent Encoder::poll() {
-    EncoderEvent ev = _pollRotation();
+    EncoderEvent ev = _pollButton();
     if (ev != ENC_NONE) return ev;
-    return _pollButton();
+    return _pollRotation();
 }
 
 EncoderEvent Encoder::_pollRotation() {
