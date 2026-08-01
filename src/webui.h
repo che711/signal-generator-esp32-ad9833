@@ -66,6 +66,7 @@ private:
     void _handleSetWave();
     void _handleSetStep();
     void _handleSave();
+    void _handleSetOut();
     void _handleSweepStart();
     void _handleSweepStop();
 

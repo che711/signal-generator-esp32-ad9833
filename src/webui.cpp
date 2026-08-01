@@ -141,6 +141,14 @@ body{
 .bar-free{background:var(--green)}
 .bar-pct{font-size:.82rem;font-weight:700;color:var(--text2);width:38px;text-align:right;flex-shrink:0}
 .bar-val{font-size:.82rem;font-weight:700;color:var(--green);width:60px;text-align:right;flex-shrink:0}
+.btn-out{
+  width:100%;padding:16px;border-radius:12px;border:2px solid var(--border);
+  font-size:1.05rem;font-weight:800;letter-spacing:.08em;cursor:pointer;
+  transition:all .15s;background:var(--surface2);color:var(--text3);
+}
+.btn-out.on{border-color:var(--green);background:var(--green-bg);color:var(--green);
+  box-shadow:0 0 14px rgba(45,212,160,.25)}
+.btn-out:hover{transform:translateY(-1px)}
 .sw-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px}
 .sw-grid input{
   width:100%;padding:12px 10px;border-radius:10px;
@@ -193,6 +201,11 @@ details.api-details[open] summary::before{content:'\25BE  '}
 <div class="header">
   <h1>&#9646; DDS GENERATOR</h1>
   <div><span class="badge"><span class="dot"></span>ESP32 + AD9833 &middot; Online</span></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Output</div>
+  <button class="btn-out on" id="outBtn" onclick="toggleOut()">OUTPUT ON</button>
 </div>
 
 <div class="card">
@@ -389,6 +402,7 @@ function applyStatus(d){
   });
   curStep=d.stepIdx;
   applySweep(d.sweep);
+  applyOut(d.out!==false);
 
   if(d.sys){
     const s=d.sys;
@@ -474,6 +488,20 @@ async function saveSettings(){
 document.getElementById('freqIn')
   .addEventListener('keydown',e=>{ if(e.key==='Enter') setFreq(); });
 
+// ── Output toggle ──
+let outOn=true;
+async function toggleOut(){
+  const d=await api('/set/out?v='+(outOn?0:1));
+  if(d){ applyStatus(d); toast(d.out?'Output ON':'Output OFF'); }
+}
+function applyOut(on){
+  outOn=on;
+  const b=document.getElementById('outBtn');
+  b.textContent=on?'OUTPUT ON':'OUTPUT OFF';
+  b.classList.toggle('on',on);
+  document.querySelector('.freq-value').style.opacity=on?'1':'.35';
+}
+
 // ── Sweep UI ──
 let swMode='lin', swActive=false;
 
@@ -525,6 +553,7 @@ function buildApiList(){
     ['Encoder step: 0 = 0.1 Hz ... 7 = 1 MHz',         `curl "http://${h}/set/step?v=4"`],
     ['Log sweep 10 Hz to 100 kHz over 10 s',           `curl "http://${h}/sweep/start?f0=10&f1=100000&t=10&mode=log"`],
     ['Stop sweep (freq stays where it was)',           `curl http://${h}/sweep/stop`],
+    ['Output enable: 1 on, 0 off (mute, keeps settings)', `curl "http://${h}/set/out?v=0"`],
     ['Persist current settings to NVS',                `curl http://${h}/save`],
   ];
   document.getElementById('apiList').innerHTML = EX.map(([d,c],i)=>`
@@ -650,6 +679,7 @@ void WebUI::_registerRoutes() {
     _server.on("/set/wave", [this](){ _handleSetWave(); });
     _server.on("/set/step", [this](){ _handleSetStep(); });
     _server.on("/save",        [this](){ _handleSave();       });
+    _server.on("/set/out",     [this](){ _handleSetOut();     });
     _server.on("/sweep/start", [this](){ _handleSweepStart(); });
     _server.on("/sweep/stop",  [this](){ _handleSweepStop();  });
     _server.onNotFound([this](){ _server.send(404, "text/plain", "not found"); });
@@ -670,6 +700,7 @@ void WebUI::_handleStatus() {
 
     float freq = 0; int waveIdx = 0; int stepIdx = 0;
     const char* waveLbl = ""; const char* stepLbl = "";
+    bool outOn = true;
     bool swAct = false, swLog = false;
     float swF0 = 0, swF1 = 0; uint32_t swT = 0; int swPct = 0;
 
@@ -679,6 +710,7 @@ void WebUI::_handleStatus() {
         stepIdx = (int)_gen.getStep();
         waveLbl = _gen.waveLabel();
         stepLbl = _gen.stepLabel();
+        outOn   = _gen.getOutput();
         swAct   = _gen.sweepActive();
         swLog   = _gen.sweepIsLog();
         swF0    = _gen.sweepF0();
@@ -693,6 +725,7 @@ void WebUI::_handleStatus() {
     j += "\"step\":\""    + String(stepLbl)    + "\",";
     j += "\"waveIdx\":"   + String(waveIdx)    + ",";
     j += "\"stepIdx\":"   + String(stepIdx)    + ",";
+    j += "\"out\":"       + String(outOn ? "true" : "false") + ",";
     j += "\"sweep\":{";
     j += "\"active\":"   + String(swAct ? "true" : "false") + ",";
     j += "\"f0\":"       + String(swF0, 1)  + ",";
@@ -761,6 +794,17 @@ void WebUI::_handleSetStep() {
 void WebUI::_handleSave() {
     _withGen([&](){ _gen.saveSettings(); });
     _server.send(200, "text/plain", "ok");
+}
+
+void WebUI::_handleSetOut() {
+    if (!_server.hasArg("v")) {
+        _server.send(400, "text/plain", "missing arg v (0|1)");
+        return;
+    }
+    bool on = _server.arg("v").toInt() != 0;
+    _withGen([&](){ _gen.setOutput(on); });
+    _changedFlag = true;
+    _handleStatus();
 }
 
 void WebUI::_handleSweepStart() {

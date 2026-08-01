@@ -21,6 +21,7 @@ restored on boot.
 | Acceleration | Fast encoder spin = 10× bigger step |
 | Web interface | Embedded single-page UI: set frequency/waveform/step, sweep control, curl cheatsheet, live system stats |
 | Sweep | Linear / logarithmic frequency sweep, 0.2 s – 1 h, phase-continuous |
+| Output enable | Mute button (web/API): DDS sleep, settings kept, state survives reboot |
 | mDNS | `http://dds-gen.local` (no need to know the IP) |
 | Persistence | Auto-save to NVS 5 s after the last change + manual save from web UI |
 | WiFi watchdog | Automatic reconnect if the connection drops |
@@ -57,6 +58,7 @@ HTTP API used by the page (usable from scripts too):
 | `GET /set/freq?v=<hz>` | Set frequency (0.1 – 12 000 000 Hz) |
 | `GET /set/wave?v=<0..3>` | Set waveform (0 sine, 1 triangle, 2 square, 3 square/2) |
 | `GET /set/step?v=<0..7>` | Set frequency step (0 = 0.1 Hz … 7 = 1 MHz) |
+| `GET /set/out?v=<0\|1>` | Output enable: `0` mutes the DDS (sleep, ~0 V out), `1` restores the selected waveform |
 | `GET /save` | Persist current settings to NVS |
 | `GET /sweep/start?f0=&f1=&t=&mode=` | Frequency sweep f0 → f1 Hz over `t` seconds, `mode` = `lin` \| `log` |
 | `GET /sweep/stop` | Stop sweep (frequency stays at its current value) |

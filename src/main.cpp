@@ -160,7 +160,8 @@ void loop() {
         String freqStr, waveStr, stepStr;
         if (xSemaphoreTake(genMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             freqStr = gen.freqLabel();
-            waveStr = gen.waveLabel();
+            // Выход выключен — вместо формы показываем OFF
+            waveStr = gen.getOutput() ? gen.waveLabel() : "OFF";
             stepStr = gen.stepLabel();
             xSemaphoreGive(genMutex);
 

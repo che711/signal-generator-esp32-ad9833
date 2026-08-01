@@ -46,6 +46,12 @@ public:
     void nextWave();
     void nextStep();
 
+    // ── Output enable ─────────────────────────────────────
+    // false: AD9833_OFF (sleep DAC+MCLK, выход ~0 В) + стоп sweep.
+    // Форма и частота сохраняются и применяются при включении
+    void setOutput(bool on);
+    bool getOutput() const { return _outOn; }
+
     // ── Sweep ─────────────────────────────────────────────
     // Линейный или логарифмический проход f0 → f1 за durMs.
     // false — параметры вне диапазона. Ручной setFrequency()
@@ -76,6 +82,7 @@ private:
     float       _freq;
     WaveType    _wave;
     FreqStep    _step;
+    bool        _outOn = true;
 
     // ── Sweep state ───────────────────────────────────────
     bool     _swActive  = false;

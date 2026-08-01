@@ -27,7 +27,8 @@ void SignalGenerator::begin() {
     _dds.begin();
     _loadSettings();
     _dds.setFrequency(_freq);
-    _applyWave();
+    if (_outOn) _applyWave();
+    else        _dds.setWave(AD9833_OFF);
     Serial.printf("[GEN] freq=%.2fHz wave=%d step=%d\n",
                   _freq, (int)_wave, (int)_step);
 }
@@ -143,6 +144,20 @@ int SignalGenerator::sweepProgress() const {
     return (int)(el * 100UL / _swDurMs);
 }
 
+// ── Output ────────────────────────────────────────────────
+
+void SignalGenerator::setOutput(bool on) {
+    if (on == _outOn) return;
+    _outOn = on;
+    if (on) {
+        _applyWave();               // восстановить выбранную форму
+    } else {
+        _swActive = false;          // OFF глушит и sweep
+        _dds.setWave(AD9833_OFF);   // sleep: DAC + MCLK, выход ~0 В
+    }
+    Serial.printf("[GEN] output %s\n", on ? "ON" : "OFF");
+}
+
 // ── Wave ──────────────────────────────────────────────────
 
 // Прямая установка по индексу. Отрицательный/некорректный idx игнорируем:
@@ -158,6 +173,7 @@ void SignalGenerator::nextWave() {
 }
 
 void SignalGenerator::_applyWave() {
+    if (!_outOn) return;            // форма запомнена, применится при ON
     switch (_wave) {
         case WAVE_SINE:     _dds.setWave(AD9833_SINE);     break;
         case WAVE_TRIANGLE: _dds.setWave(AD9833_TRIANGLE); break;
