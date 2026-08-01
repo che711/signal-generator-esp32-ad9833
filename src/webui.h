@@ -31,8 +31,9 @@ public:
     }
 
 private:
-    SignalGenerator& _gen;
-    WebServer        _server;
+    SignalGenerator&  _gen;
+    SemaphoreHandle_t _genMutex;
+    WebServer         _server;
     bool             _connected;
     bool             _serverStarted;   // маршруты регистрируем ровно один раз
     bool             _mdnsStarted;

@@ -37,7 +37,8 @@ void IRAM_ATTR Encoder::_isr() {
 
 Encoder::Encoder()
     : _accum(0), _lastDetentMs(0), _fast(false),
-      _lastBtnState(HIGH), _btnPending(false), _btnPressMs(0)
+      _lastRaw(HIGH), _stableState(HIGH), _lastEdgeMs(0),
+      _btnPending(false), _btnPressMs(0)
 {}
 
 void Encoder::begin() {
@@ -54,10 +55,12 @@ void Encoder::begin() {
     attachInterrupt(digitalPinToInterrupt(ENC_DT_PIN),  _isr, CHANGE);
 }
 
-    _s_lastClk = digitalRead(ENC_CLK_PIN);
-
-    // Прерывание по любому изменению CLK
-    attachInterrupt(digitalPinToInterrupt(ENC_CLK_PIN), _isrClk, CHANGE);
+// Кнопка опрашивается первой: _pollRotation() смотрит на её
+// отфильтрованное состояние, чтобы гасить паразитные тики при клике
+EncoderEvent Encoder::poll() {
+    EncoderEvent ev = _pollButton();
+    if (ev != ENC_NONE) return ev;
+    return _pollRotation();
 }
 
 EncoderEvent Encoder::_pollRotation() {
@@ -66,6 +69,11 @@ EncoderEvent Encoder::_pollRotation() {
     int32_t d = _s_delta;
     _s_delta = 0;
     portEXIT_CRITICAL(&_s_mux);
+
+    // Пока кнопка нажата, вал механически дёргается — отбрасываем
+    // паразитные тики, чтобы клик не сдвигал частоту
+    if (_stableState == LOW || _btnPending) { _accum = 0; return ENC_NONE; }
+
     _accum += d;
 
     int dir = 0;
@@ -82,25 +90,33 @@ EncoderEvent Encoder::_pollRotation() {
     return (dir > 0) ? ENC_CW : ENC_CCW;
 }
 
-// ── Кнопка — программный дебаунс без delay() ─────────────
+// БАГ был здесь: одиночная перепроверка через 5 мс попадала на дребезг
+// KY-040 (5-30 мс) — нажатие терялось целиком, клики не регистрировались,
+// и режим сигнала через энкодер не переключался вовсе.
+// Теперь: любой сырой фронт перезапускает таймер, состояние принимается
+// только после BTN_DEBOUNCE_MS стабильности. Без блокирующих delay().
 EncoderEvent Encoder::_pollButton() {
-    int btn = digitalRead(ENC_SW_PIN);
+    int raw = digitalRead(ENC_SW_PIN);
     uint32_t now = millis();
 
-    if (btn == LOW && _lastBtnState == HIGH) {
-        if (now - _btnPressMs > DEBOUNCE_MS) {   // дебаунс нажатия
+    if (raw != _lastRaw) {          // сырой фронт — рестарт фильтра
+        _lastRaw = raw;
+        _lastEdgeMs = now;
+        return ENC_NONE;
+    }
+
+    if (now - _lastEdgeMs < BTN_DEBOUNCE_MS) return ENC_NONE;
+
+    if (raw != _stableState) {      // состояние стабильно и изменилось
+        _stableState = raw;
+        if (raw == LOW) {           // подтверждённое нажатие
             _btnPressMs = now;
             _btnPending = true;
+        } else if (_btnPending) {   // подтверждённое отпускание
+            _btnPending = false;
+            uint32_t held = now - _btnPressMs;
+            return (held >= LONG_PRESS_MS) ? ENC_LONG_CLICK : ENC_CLICK;
         }
     }
-
-    if (btn == HIGH && _lastBtnState == LOW && _btnPending) {
-        _btnPending   = false;
-        _lastBtnState = btn;
-        uint32_t held = now - _btnPressMs;
-        return (held >= LONG_PRESS_MS) ? ENC_LONG_CLICK : ENC_CLICK;
-    }
-
-    _lastBtnState = btn;
     return ENC_NONE;
 }

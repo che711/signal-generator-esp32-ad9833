@@ -70,15 +70,15 @@ void setup() {
 }
 
 // ── loop — UI на ядре 1 ───────────────────────────────────
-void loop() {
-    // Web + WiFi watchdog + CPU sampling
-    web.handle();
-    web.checkWiFi();
-    web.updateCpuLoad();
+// Web/WiFi/CPU обслуживаются задачей webTask на ядре 0
+static bool     needRedraw = true;
+static uint32_t lastSaveMs = 0;
+static uint32_t lastDrawMs = 0;
 
+void loop() {
     // БАГ был здесь: изменения из веб-интерфейса не обновляли OLED
     // (needRedraw ставился только энкодером) и не автосохранялись
-    if (web.consumeChanged()) {
+    if (web->consumeChanged()) {
         needRedraw = true;
         lastSaveMs = millis();
     }
@@ -148,9 +148,9 @@ void loop() {
             gen.freqLabel(),
             gen.waveLabel(),
             gen.stepLabel(),
-            web.isConnected(),
+            web->isConnected(),
             String(WIFI_SSID),
-            web.ipAddress()
+            web->ipAddress()
         );
         lastDrawMs = now;
         needRedraw = false;

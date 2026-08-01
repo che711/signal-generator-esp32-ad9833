@@ -1,5 +1,8 @@
 #include "webui.h"
 
+volatile uint32_t WebUI::_s_idle0 = 0;
+volatile uint32_t WebUI::_s_idle1 = 0;
+
 // ─────────────────────────────────────────────────────────
 // Embedded HTML — v5 (без изменений UI, только JS улучшен)
 // ─────────────────────────────────────────────────────────
@@ -403,8 +406,8 @@ setInterval(poll,2000);
 
 // ─────────────────────────────────────────────────────────
 
-WebUI::WebUI(SignalGenerator& gen)
-    : _gen(gen), _server(WEB_PORT), _connected(false),
+WebUI::WebUI(SignalGenerator& gen, SemaphoreHandle_t genMutex)
+    : _gen(gen), _genMutex(genMutex), _server(WEB_PORT), _connected(false),
       _serverStarted(false), _mdnsStarted(false), _changedFlag(false),
       _lastWifiCheckMs(0)
 {}
@@ -541,46 +544,38 @@ void WebUI::_handleStatus() {
 }
 
 void WebUI::_handleSetFreq() {
-    if (_server.hasArg("v")) {
-        _gen.setFrequency(_server.arg("v").toFloat());
-        _changedFlag = true;
-        Serial.printf("[Web] freq → %.2f Hz\n", _gen.getFrequency());
+    if (!_server.hasArg("v")) {
+        _server.send(400, "text/plain", "missing arg v");
+        return;
     }
     float requested = _server.arg("v").toFloat();
     _withGen([&](){ _gen.setFrequency(requested); });
+    _changedFlag = true;
     Serial.printf("[Web] freq → %.2f Hz (requested %.2f)\n",
                   _gen.getFrequency(), requested);
     _handleStatus();   // вернуть реально установленное состояние
 }
 
 void WebUI::_handleSetWave() {
-    if (_server.hasArg("v")) {
-        _gen.setWaveByIndex(_server.arg("v").toInt());
-        _changedFlag = true;
-        Serial.printf("[Web] wave → %s\n", _gen.waveLabel());
-    }
     int idx = _server.arg("v").toInt();
-    if (idx < 0 || idx >= WAVE_COUNT) {
+    if (!_server.hasArg("v") || idx < 0 || idx >= WAVE_COUNT) {
         _server.send(400, "text/plain", "wave index out of range");
         return;
     }
     _withGen([&](){ _gen.setWaveByIndex(idx); });
+    _changedFlag = true;
     Serial.printf("[Web] wave → %s\n", _gen.waveLabel());
     _handleStatus();
 }
 
 void WebUI::_handleSetStep() {
-    if (_server.hasArg("v")) {
-        _gen.setStepByIndex(_server.arg("v").toInt());
-        _changedFlag = true;
-        Serial.printf("[Web] step → %s\n", _gen.stepLabel());
-    }
     int idx = _server.arg("v").toInt();
-    if (idx < 0 || idx >= STEP_COUNT) {
+    if (!_server.hasArg("v") || idx < 0 || idx >= STEP_COUNT) {
         _server.send(400, "text/plain", "step index out of range");
         return;
     }
     _withGen([&](){ _gen.setStepByIndex(idx); });
+    _changedFlag = true;
     Serial.printf("[Web] step → %s\n", _gen.stepLabel());
     _handleStatus();
 }

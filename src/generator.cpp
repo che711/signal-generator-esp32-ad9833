@@ -85,7 +85,6 @@ void SignalGenerator::setWaveByIndex(int idx) {
     if (idx < 0 || idx >= WAVE_COUNT) return;
     _wave = (WaveType)idx;
     _applyWave();
-    return _wave;
 }
 
 void SignalGenerator::nextWave() {

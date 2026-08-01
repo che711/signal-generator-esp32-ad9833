@@ -36,10 +36,10 @@ public:
     void begin();
     void saveSettings();
 
-    // Setters — возвращают реально установленное значение
-    float    setFrequency(float hz);
-    WaveType setWaveByIndex(int idx);
-    FreqStep setStepByIndex(int idx);
+    // setFrequency возвращает реально установленное значение
+    float setFrequency(float hz);
+    void  setWaveByIndex(int idx);
+    void  setStepByIndex(int idx);
 
     void stepUp();
     void stepDown();

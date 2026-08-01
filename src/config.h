@@ -12,6 +12,14 @@
 #define WIFI_RECONNECT_MS       10000
 #define WIFI_CONNECT_TIMEOUT_MS 8000
 
+// ── FreeRTOS tasks ────────────────────────────────────────
+#define TASK_WEB_STACK        8192
+#define TASK_WEB_PRIORITY        1
+#define TASK_WEB_CORE            0    // WebUI на ядре 0
+
+// ── Autosave ──────────────────────────────────────────────
+#define AUTOSAVE_MS           5000    // сохранить через 5 сек после изменения
+
 // ── NVS namespace ─────────────────────────────────────────
 #define NVS_NAMESPACE           "ddsgen"
 
@@ -31,19 +39,7 @@
 #define ENC_SW_PIN              32
 
 // ── Encoder timing ────────────────────────────────────────
-#define DEBOUNCE_MS              5
-#define LONG_PRESS_MS          800
-#define ACCEL_THRESHOLD_MS      80    // быстрое вращение (мс между тиками)
-#define ACCEL_MULTIPLIER        10
-
-// ── Display ───────────────────────────────────────────────
-#define DISPLAY_REFRESH_MS      33    // ~30 fps
-
-// ── Autosave ──────────────────────────────────────────────
-#define AUTOSAVE_MS           5000    // сохранить через 5 сек после изменения
-
-// ── FreeRTOS tasks ────────────────────────────────────────
-#define TASK_WEB_STACK        8192
-#define TASK_WEB_PRIORITY        1
-#define TASK_WEB_CORE            0    // WebUI на ядре 0
-#define TASK_UI_CORE             1    // UI/encoder на ядре 1
+#define BTN_DEBOUNCE_MS   20    // ms стабильности для кнопки (дребезг KY-040 5-30 мс)
+#define LONG_PRESS_MS    800
+#define ACCEL_THRESHOLD   80    // ms — быстрое вращение
+#define ACCEL_MULTIPLIER  10    // шаг × 10 при быстром вращении

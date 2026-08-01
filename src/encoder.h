@@ -27,11 +27,14 @@ private:
     uint32_t _lastDetentMs;
     bool     _fast;
 
-    // ── Button (polled) ───────────────────────────────────
-    int      _lastBtnState;
+    // ── Button (polled, time-based debounce) ─────────────
+    int      _lastRaw;       // последнее сырое чтение пина
+    int      _stableState;   // подтверждённое (отфильтрованное) состояние
+    uint32_t _lastEdgeMs;    // время последнего сырого фронта
     bool     _btnPending;
     uint32_t _btnPressMs;
 
+    EncoderEvent _pollRotation();
     EncoderEvent _pollButton();
 
     // ISR-часть: должна быть static
