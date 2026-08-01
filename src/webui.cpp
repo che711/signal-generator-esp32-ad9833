@@ -591,8 +591,8 @@ void WebUI::_handleSave() {
 }
 
 // ── CPU load monitor ──────────────────────────────────────
-bool IRAM_ATTR WebUI::_idleHook0() { _s_idle0++; return false; }
-bool IRAM_ATTR WebUI::_idleHook1() { _s_idle1++; return false; }
+bool IRAM_ATTR WebUI::_idleHook0() { _s_idle0 = _s_idle0 + 1; return false; }
+bool IRAM_ATTR WebUI::_idleHook1() { _s_idle1 = _s_idle1 + 1; return false; }
 
 void WebUI::_initCpuMon() {
     _cpuLoad        = 0;
