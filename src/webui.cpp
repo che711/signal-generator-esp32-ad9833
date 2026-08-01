@@ -549,10 +549,13 @@ void WebUI::_handleSetFreq() {
         return;
     }
     float requested = _server.arg("v").toFloat();
-    _withGen([&](){ _gen.setFrequency(requested); });
+    float applied = 0;
+    // applied читаем внутри мьютекса: раньше _gen.getFrequency() дёргался
+    // уже после _withGen — гонка с UI-задачей на ядре 1
+    _withGen([&](){ applied = _gen.setFrequency(requested); });
     _changedFlag = true;
     Serial.printf("[Web] freq → %.2f Hz (requested %.2f)\n",
-                  _gen.getFrequency(), requested);
+                  applied, requested);
     _handleStatus();   // вернуть реально установленное состояние
 }
 
@@ -562,9 +565,10 @@ void WebUI::_handleSetWave() {
         _server.send(400, "text/plain", "wave index out of range");
         return;
     }
-    _withGen([&](){ _gen.setWaveByIndex(idx); });
+    const char* lbl = "";
+    _withGen([&](){ _gen.setWaveByIndex(idx); lbl = _gen.waveLabel(); });
     _changedFlag = true;
-    Serial.printf("[Web] wave → %s\n", _gen.waveLabel());
+    Serial.printf("[Web] wave → %s\n", lbl);
     _handleStatus();
 }
 
@@ -574,9 +578,10 @@ void WebUI::_handleSetStep() {
         _server.send(400, "text/plain", "step index out of range");
         return;
     }
-    _withGen([&](){ _gen.setStepByIndex(idx); });
+    const char* lbl = "";
+    _withGen([&](){ _gen.setStepByIndex(idx); lbl = _gen.stepLabel(); });
     _changedFlag = true;
-    Serial.printf("[Web] step → %s\n", _gen.stepLabel());
+    Serial.printf("[Web] step → %s\n", lbl);
     _handleStatus();
 }
 
