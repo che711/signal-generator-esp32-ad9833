@@ -46,6 +46,27 @@ public:
     void nextWave();
     void nextStep();
 
+    // ── Output enable ─────────────────────────────────────
+    // false: AD9833_OFF (sleep DAC+MCLK, выход ~0 В) + стоп sweep.
+    // Форма и частота сохраняются и применяются при включении
+    void setOutput(bool on);
+    bool getOutput() const { return _outOn; }
+
+    // ── Sweep ─────────────────────────────────────────────
+    // Линейный или логарифмический проход f0 → f1 за durMs.
+    // false — параметры вне диапазона. Ручной setFrequency()
+    // (энкодер, веб) останавливает активный sweep.
+    bool sweepStart(float f0, float f1, uint32_t durMs, bool logMode);
+    void sweepStop();
+    bool sweepActive()   const { return _swActive; }
+    // Вызывать из loop() ПОД мьютексом. true — частота изменилась
+    bool sweepTick(uint32_t nowMs);
+    float    sweepF0()       const { return _swF0; }
+    float    sweepF1()       const { return _swF1; }
+    uint32_t sweepDurMs()    const { return _swDurMs; }
+    bool     sweepIsLog()    const { return _swLog; }
+    int      sweepProgress() const;   // 0–100 %
+
     float      getFrequency() const { return _freq; }
     WaveType   getWave()      const { return _wave; }
     FreqStep   getStep()      const { return _step; }
@@ -61,6 +82,19 @@ private:
     float       _freq;
     WaveType    _wave;
     FreqStep    _step;
+    bool        _outOn = true;
+
+    // ── Sweep state ───────────────────────────────────────
+    bool     _swActive  = false;
+    bool     _swLog     = false;
+    float    _swF0      = 0;
+    float    _swF1      = 0;
+    uint32_t _swDurMs   = 0;
+    uint32_t _swStartMs = 0;
+    uint32_t _swTickMs  = 0;
+
+    // Установка частоты БЕЗ остановки sweep (для sweepTick)
+    void _applyFreq(float hz);
 
     void _applyWave();
     void _loadSettings();

@@ -6,6 +6,7 @@
 #include <ESPmDNS.h>
 #include "esp_freertos_hooks.h"
 #include "freertos/semphr.h"
+#include <atomic>
 #include "generator.h"
 #include "config.h"
 
@@ -24,10 +25,10 @@ public:
 
     // true один раз после изменения настроек через веб (для перерисовки
     // OLED и запуска таймера автосохранения в main loop)
+    // atomic: флаг пишется web-задачей (ядро 0), читается loop() (ядро 1).
+    // exchange() атомарно читает и сбрасывает — событие не потеряется
     bool consumeChanged() {
-        bool c = _changedFlag;
-        _changedFlag = false;
-        return c;
+        return _changedFlag.exchange(false);
     }
 
 private:
@@ -37,7 +38,7 @@ private:
     bool             _connected;
     bool             _serverStarted;   // маршруты регистрируем ровно один раз
     bool             _mdnsStarted;
-    bool             _changedFlag;
+    std::atomic<bool> _changedFlag;
     uint32_t         _lastWifiCheckMs;
 
     // ── CPU load monitor ──────────────────────────────────
@@ -65,6 +66,9 @@ private:
     void _handleSetWave();
     void _handleSetStep();
     void _handleSave();
+    void _handleSetOut();
+    void _handleSweepStart();
+    void _handleSweepStop();
 
     // Хелпер: захватить мьютекс, выполнить действие, отпустить
     // Возвращает false если мьютекс не получен за timeout

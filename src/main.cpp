@@ -83,6 +83,15 @@ void loop() {
         lastSaveMs = millis();
     }
 
+    // Sweep: тик двигает частоту. sweepActive() читается без мьютекса —
+    // это одиночный bool, худший случай: один лишний/поздний захват
+    if (gen.sweepActive()) {
+        if (xSemaphoreTake(genMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+            if (gen.sweepTick(millis())) needRedraw = true;
+            xSemaphoreGive(genMutex);
+        }
+    }
+
     bool changed = false;
     EncoderEvent ev = enc.poll();
 
@@ -144,16 +153,31 @@ void loop() {
     // Перерисовка дисплея ~30 fps, только при изменениях
     uint32_t now = millis();
     if (needRedraw && now - lastDrawMs > 33) {
-        disp.drawMain(
-            gen.freqLabel(),
-            gen.waveLabel(),
-            gen.stepLabel(),
-            web->isConnected(),
-            String(WIFI_SSID),
-            web->ipAddress()
-        );
-        lastDrawMs = now;
-        needRedraw = false;
+        // ГОНКА была здесь: freqLabel()/waveLabel()/stepLabel() читались
+        // без мьютекса, пока web-задача на ядре 0 могла менять состояние.
+        // Снимаем снапшот под мьютексом, рисуем — уже без него
+        // (sendBuffer() по I2C ~22 мс — держать мьютекс столько нельзя).
+        String freqStr, waveStr, stepStr;
+        if (xSemaphoreTake(genMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            freqStr = gen.freqLabel();
+            // Выход выключен — вместо формы показываем OFF
+            waveStr = gen.getOutput() ? gen.waveLabel() : "OFF";
+            stepStr = gen.stepLabel();
+            xSemaphoreGive(genMutex);
+
+            disp.drawMain(
+                freqStr,
+                waveStr.c_str(),
+                stepStr.c_str(),
+                web->isConnected(),
+                String(WIFI_SSID),
+                web->ipAddress()
+            );
+            lastDrawMs = now;
+            needRedraw = false;
+        }
+        // мьютекс не получен → needRedraw остаётся true, перерисуем в
+        // следующей итерации loop()
     }
 
     // Небольшая задержка чтобы не монополизировать ядро 1
