@@ -66,6 +66,8 @@ private:
     void _handleSetWave();
     void _handleSetStep();
     void _handleSave();
+    void _handleSweepStart();
+    void _handleSweepStop();
 
     // Хелпер: захватить мьютекс, выполнить действие, отпустить
     // Возвращает false если мьютекс не получен за timeout

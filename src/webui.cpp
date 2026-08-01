@@ -141,6 +141,51 @@ body{
 .bar-free{background:var(--green)}
 .bar-pct{font-size:.82rem;font-weight:700;color:var(--text2);width:38px;text-align:right;flex-shrink:0}
 .bar-val{font-size:.82rem;font-weight:700;color:var(--green);width:60px;text-align:right;flex-shrink:0}
+.sw-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px}
+.sw-grid input{
+  width:100%;padding:12px 10px;border-radius:10px;
+  border:2px solid var(--border);background:var(--bg);
+  color:var(--text);font-size:.95rem;text-align:center;outline:none;
+}
+.sw-grid input:focus{border-color:var(--purple)}
+.sw-lbl{font-size:.72rem;color:var(--text3);margin-bottom:4px;text-align:center}
+.mode-row{display:flex;gap:10px;margin-bottom:12px}
+.mbtn{
+  flex:1;padding:11px;border-radius:10px;border:2px solid var(--border);
+  background:transparent;color:var(--text2);font-size:.9rem;font-weight:600;
+  cursor:pointer;transition:all .15s;
+}
+.mbtn.active{border-color:var(--green);background:var(--green-bg);color:var(--green)}
+.btn-sweep{
+  width:100%;padding:14px;border-radius:12px;border:none;
+  background:var(--purple-d);color:#fff;font-size:1rem;font-weight:700;
+  cursor:pointer;transition:all .15s;
+}
+.btn-sweep:hover{background:var(--purple)}
+.btn-sweep.stop{background:#7a2626}
+.btn-sweep.stop:hover{background:#a03030}
+.api-item{
+  display:flex;align-items:center;gap:8px;
+  padding:9px 0;border-bottom:1px solid var(--border);
+}
+.api-item:last-child{border:none}
+.api-cmd{
+  flex:1;font-family:ui-monospace,monospace;font-size:.76rem;
+  color:var(--text2);overflow-x:auto;white-space:nowrap;
+}
+.api-desc{font-size:.72rem;color:var(--text3);margin-top:2px}
+.btn-copy{
+  padding:7px 12px;border-radius:8px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--text2);font-size:.78rem;
+  font-weight:600;cursor:pointer;flex-shrink:0;transition:all .15s;
+}
+.btn-copy:hover{border-color:var(--purple);color:var(--purple)}
+details.api-details summary{
+  cursor:pointer;color:var(--text3);font-size:.85rem;
+  list-style:none;user-select:none;
+}
+details.api-details summary::before{content:'\25B8  ';color:var(--purple)}
+details.api-details[open] summary::before{content:'\25BE  '}
 </style>
 </head>
 <body>
@@ -211,6 +256,36 @@ body{
     <button class="sbtn" id="s6" onclick="setStep(6)">100 kHz</button>
     <button class="sbtn" id="s7" onclick="setStep(7)">1 MHz</button>
   </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Sweep</div>
+  <div class="sw-grid">
+    <div><div class="sw-lbl">From, Hz</div>
+      <input type="number" id="swF0" value="100" min="0.1" max="12000000" step="any"></div>
+    <div><div class="sw-lbl">To, Hz</div>
+      <input type="number" id="swF1" value="100000" min="0.1" max="12000000" step="any"></div>
+    <div><div class="sw-lbl">Time, s</div>
+      <input type="number" id="swT" value="10" min="0.2" max="3600" step="any"></div>
+  </div>
+  <div class="mode-row">
+    <button class="mbtn active" id="mLin" onclick="setSwMode('lin')">Linear</button>
+    <button class="mbtn" id="mLog" onclick="setSwMode('log')">Logarithmic</button>
+  </div>
+  <div class="bar-row" id="swProgRow" style="display:none">
+    <div class="bar-label">Progress</div>
+    <div class="bar-track"><div class="bar-fill bar-cpu" id="bSw"></div></div>
+    <div class="bar-pct" id="pSw">0%</div>
+  </div>
+  <button class="btn-sweep" id="swBtn" onclick="toggleSweep()">&#9654;&ensp;Start sweep</button>
+</div>
+
+<div class="card">
+  <div class="card-title">HTTP API</div>
+  <details class="api-details" open>
+    <summary>curl examples &mdash; scripts, CI, lab automation</summary>
+    <div id="apiList" style="margin-top:10px"></div>
+  </details>
 </div>
 
 <div class="card">
@@ -313,6 +388,7 @@ function applyStatus(d){
     btn.querySelectorAll('path,polyline').forEach(el=>el.setAttribute('stroke',c));
   });
   curStep=d.stepIdx;
+  applySweep(d.sweep);
 
   if(d.sys){
     const s=d.sys;
@@ -398,6 +474,84 @@ async function saveSettings(){
 document.getElementById('freqIn')
   .addEventListener('keydown',e=>{ if(e.key==='Enter') setFreq(); });
 
+// ── Sweep UI ──
+let swMode='lin', swActive=false;
+
+function setSwMode(m){
+  swMode=m;
+  document.getElementById('mLin').classList.toggle('active',m==='lin');
+  document.getElementById('mLog').classList.toggle('active',m==='log');
+}
+
+async function toggleSweep(){
+  if(swActive){
+    const d=await api('/sweep/stop');
+    if(d) applyStatus(d);
+    return;
+  }
+  const f0=parseFloat(document.getElementById('swF0').value);
+  const f1=parseFloat(document.getElementById('swF1').value);
+  const t =parseFloat(document.getElementById('swT').value);
+  if([f0,f1,t].some(isNaN)){toast('Fill all sweep fields','err');return;}
+  const d=await api(`/sweep/start?f0=${f0}&f1=${f1}&t=${t}&mode=${swMode}`);
+  if(d){ applyStatus(d); toast('Sweep started'); }
+}
+
+function applySweep(sw){
+  if(!sw) return;
+  swActive=sw.active;
+  const btn=document.getElementById('swBtn');
+  const row=document.getElementById('swProgRow');
+  if(sw.active){
+    btn.innerHTML='&#9632;&ensp;Stop sweep';
+    btn.classList.add('stop');
+    row.style.display='flex';
+    document.getElementById('bSw').style.width=sw.progress+'%';
+    document.getElementById('pSw').textContent=sw.progress+'%';
+  }else{
+    btn.innerHTML='&#9654;&ensp;Start sweep';
+    btn.classList.remove('stop');
+    row.style.display='none';
+  }
+}
+
+// ── API examples with copy buttons ──
+function buildApiList(){
+  const h=location.host||'dds-gen.local';
+  const EX=[
+    ['Device state (freq, wave, RSSI, heap, uptime)', `curl http://${h}/status`],
+    ['Set frequency: 10 kHz',                          `curl "http://${h}/set/freq?v=10000"`],
+    ['Waveform: 0 sine, 1 tri, 2 square, 3 square/2',  `curl "http://${h}/set/wave?v=0"`],
+    ['Encoder step: 0 = 0.1 Hz ... 7 = 1 MHz',         `curl "http://${h}/set/step?v=4"`],
+    ['Log sweep 10 Hz to 100 kHz over 10 s',           `curl "http://${h}/sweep/start?f0=10&f1=100000&t=10&mode=log"`],
+    ['Stop sweep (freq stays where it was)',           `curl http://${h}/sweep/stop`],
+    ['Persist current settings to NVS',                `curl http://${h}/save`],
+  ];
+  document.getElementById('apiList').innerHTML = EX.map(([d,c],i)=>`
+    <div class="api-item">
+      <div style="flex:1;min-width:0">
+        <div class="api-cmd" id="cmd${i}">${c.replace(/&/g,'&amp;')}</div>
+        <div class="api-desc">${d}</div>
+      </div>
+      <button class="btn-copy" onclick="copyCmd(${i})">Copy</button>
+    </div>`).join('');
+}
+
+async function copyCmd(i){
+  const txt=document.getElementById('cmd'+i).textContent;
+  try{
+    await navigator.clipboard.writeText(txt);
+    toast('Copied \u2713');
+  }catch(e){
+    // clipboard API требует HTTPS/localhost — фоллбэк для http://
+    const ta=document.createElement('textarea');
+    ta.value=txt; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); ta.remove();
+    toast('Copied \u2713');
+  }
+}
+
+buildApiList();
 poll();
 setInterval(poll,2000);
 </script>
@@ -495,7 +649,10 @@ void WebUI::_registerRoutes() {
     _server.on("/set/freq", [this](){ _handleSetFreq(); });
     _server.on("/set/wave", [this](){ _handleSetWave(); });
     _server.on("/set/step", [this](){ _handleSetStep(); });
-    _server.on("/save",     [this](){ _handleSave();    });
+    _server.on("/save",        [this](){ _handleSave();       });
+    _server.on("/sweep/start", [this](){ _handleSweepStart(); });
+    _server.on("/sweep/stop",  [this](){ _handleSweepStop();  });
+    _server.onNotFound([this](){ _server.send(404, "text/plain", "not found"); });
 }
 
 void WebUI::_handleRoot() {
@@ -513,6 +670,8 @@ void WebUI::_handleStatus() {
 
     float freq = 0; int waveIdx = 0; int stepIdx = 0;
     const char* waveLbl = ""; const char* stepLbl = "";
+    bool swAct = false, swLog = false;
+    float swF0 = 0, swF1 = 0; uint32_t swT = 0; int swPct = 0;
 
     _withGen([&](){
         freq    = _gen.getFrequency();
@@ -520,6 +679,12 @@ void WebUI::_handleStatus() {
         stepIdx = (int)_gen.getStep();
         waveLbl = _gen.waveLabel();
         stepLbl = _gen.stepLabel();
+        swAct   = _gen.sweepActive();
+        swLog   = _gen.sweepIsLog();
+        swF0    = _gen.sweepF0();
+        swF1    = _gen.sweepF1();
+        swT     = _gen.sweepDurMs();
+        swPct   = _gen.sweepProgress();
     });
 
     String j = "{";
@@ -528,6 +693,14 @@ void WebUI::_handleStatus() {
     j += "\"step\":\""    + String(stepLbl)    + "\",";
     j += "\"waveIdx\":"   + String(waveIdx)    + ",";
     j += "\"stepIdx\":"   + String(stepIdx)    + ",";
+    j += "\"sweep\":{";
+    j += "\"active\":"   + String(swAct ? "true" : "false") + ",";
+    j += "\"f0\":"       + String(swF0, 1)  + ",";
+    j += "\"f1\":"       + String(swF1, 1)  + ",";
+    j += "\"t\":"        + String(swT)      + ",";
+    j += "\"mode\":\""  + String(swLog ? "log" : "lin") + "\",";
+    j += "\"progress\":" + String(swPct);
+    j += "},";
     j += "\"sys\":{";
     j += "\"ssid\":\""    + String(WIFI_SSID)                + "\",";
     j += "\"ip\":\""      + WiFi.localIP().toString()        + "\",";
@@ -588,6 +761,37 @@ void WebUI::_handleSetStep() {
 void WebUI::_handleSave() {
     _withGen([&](){ _gen.saveSettings(); });
     _server.send(200, "text/plain", "ok");
+}
+
+void WebUI::_handleSweepStart() {
+    if (!_server.hasArg("f0") || !_server.hasArg("f1") || !_server.hasArg("t")) {
+        _server.send(400, "text/plain", "need args: f0, f1, t (seconds)");
+        return;
+    }
+    float f0 = _server.arg("f0").toFloat();
+    float f1 = _server.arg("f1").toFloat();
+    float ts = _server.arg("t").toFloat();
+    bool  lg = _server.arg("mode") == "log";
+    if (lg && (f0 <= 0 || f1 <= 0)) {
+        _server.send(400, "text/plain", "log sweep needs f0,f1 > 0");
+        return;
+    }
+
+    bool ok = false;
+    _withGen([&](){ ok = _gen.sweepStart(f0, f1, (uint32_t)(ts * 1000.0f), lg); });
+    if (!ok) {
+        _server.send(400, "text/plain",
+                     "bad sweep params (freq 0.1-12e6 Hz, t 0.2-3600 s, f0 != f1)");
+        return;
+    }
+    _changedFlag = true;
+    _handleStatus();
+}
+
+void WebUI::_handleSweepStop() {
+    _withGen([&](){ _gen.sweepStop(); });
+    _changedFlag = true;
+    _handleStatus();
 }
 
 // ── CPU load monitor ──────────────────────────────────────

@@ -67,15 +67,81 @@ void SignalGenerator::saveSettings() {
 // ── Frequency ─────────────────────────────────────────────
 
 float SignalGenerator::setFrequency(float hz) {
+    _swActive = false;          // ручное вмешательство останавливает sweep
+    _applyFreq(hz);
+    return _freq;
+}
+
+void SignalGenerator::_applyFreq(float hz) {
     hz = constrain(hz, FREQ_MIN, FREQ_MAX);
-    if (hz == _freq) return _freq;
+    if (hz == _freq) return;
     _freq = hz;
     _dds.setFrequency(_freq);
-    return _freq;
 }
 
 void SignalGenerator::stepUp()   { setFrequency(_freq + getStepHz()); }
 void SignalGenerator::stepDown() { setFrequency(_freq - getStepHz()); }
+
+// ── Sweep ─────────────────────────────────────────────────
+//
+// Каждые SWEEP_TICK_MS частота пересчитывается по прогрессу p = t/T:
+//   lin: f = f0 + (f1 - f0) * p          — равные шаги в герцах
+//   log: f = f0 * (f1/f0)^p              — равные шаги в октавах,
+//        правильный режим для АЧХ: декады 10→100→1k→10k Гц проходят
+//        за равное время, как на бумаге Боде
+// AD9833 меняет частоту без разрыва фазы — сигнал чистый, без щелчков.
+
+bool SignalGenerator::sweepStart(float f0, float f1, uint32_t durMs, bool logMode) {
+    if (f0 < FREQ_MIN || f0 > FREQ_MAX) return false;
+    if (f1 < FREQ_MIN || f1 > FREQ_MAX) return false;
+    if (f0 == f1)                       return false;
+    if (durMs < SWEEP_MIN_MS || durMs > SWEEP_MAX_MS) return false;
+
+    _swF0      = f0;
+    _swF1      = f1;
+    _swDurMs   = durMs;
+    _swLog     = logMode;
+    _swStartMs = millis();
+    _swTickMs  = 0;
+    _swActive  = true;
+    _applyFreq(f0);
+    Serial.printf("[GEN] sweep %s %.1f -> %.1f Hz, %lu ms\n",
+                  logMode ? "log" : "lin", f0, f1, (unsigned long)durMs);
+    return true;
+}
+
+void SignalGenerator::sweepStop() {
+    if (!_swActive) return;
+    _swActive = false;
+    Serial.printf("[GEN] sweep stopped at %.2f Hz\n", _freq);
+}
+
+bool SignalGenerator::sweepTick(uint32_t nowMs) {
+    if (!_swActive) return false;
+    if (nowMs - _swTickMs < SWEEP_TICK_MS) return false;
+    _swTickMs = nowMs;
+
+    float p = (float)(nowMs - _swStartMs) / (float)_swDurMs;
+    if (p >= 1.0f) {                    // финиш: точно f1 и стоп
+        _applyFreq(_swF1);
+        _swActive = false;
+        Serial.println("[GEN] sweep done");
+        return true;
+    }
+
+    float f = _swLog
+        ? _swF0 * powf(_swF1 / _swF0, p)
+        : _swF0 + (_swF1 - _swF0) * p;
+    _applyFreq(f);
+    return true;
+}
+
+int SignalGenerator::sweepProgress() const {
+    if (!_swActive) return 0;
+    uint32_t el = millis() - _swStartMs;
+    if (el >= _swDurMs) return 100;
+    return (int)(el * 100UL / _swDurMs);
+}
 
 // ── Wave ──────────────────────────────────────────────────
 

@@ -83,6 +83,15 @@ void loop() {
         lastSaveMs = millis();
     }
 
+    // Sweep: тик двигает частоту. sweepActive() читается без мьютекса —
+    // это одиночный bool, худший случай: один лишний/поздний захват
+    if (gen.sweepActive()) {
+        if (xSemaphoreTake(genMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+            if (gen.sweepTick(millis())) needRedraw = true;
+            xSemaphoreGive(genMutex);
+        }
+    }
+
     bool changed = false;
     EncoderEvent ev = enc.poll();
 

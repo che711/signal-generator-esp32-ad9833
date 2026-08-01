@@ -1,5 +1,7 @@
 # DDS Signal Generator — ESP32 + AD9833 with Web UI
 
+![build](https://github.com/che711/signal-generator-esp32-ad9833/actions/workflows/build.yml/badge.svg)
+
 A compact, standalone function generator built with an ESP32 microcontroller
 and the AD9833 DDS module. Controlled via a rotary encoder or a built-in
 web interface, with status shown on a 0.96" SSD1306 OLED screen.
@@ -17,7 +19,8 @@ restored on boot.
 | Waveforms | Sine, Triangle, Square, Square/2 |
 | Frequency steps | 0.1 Hz / 1 Hz / 10 Hz / 100 Hz / 1 kHz / 10 kHz / 100 kHz / 1 MHz |
 | Acceleration | Fast encoder spin = 10× bigger step |
-| Web interface | Embedded single-page UI: set frequency/waveform/step, live system stats |
+| Web interface | Embedded single-page UI: set frequency/waveform/step, sweep control, curl cheatsheet, live system stats |
+| Sweep | Linear / logarithmic frequency sweep, 0.2 s – 1 h, phase-continuous |
 | mDNS | `http://dds-gen.local` (no need to know the IP) |
 | Persistence | Auto-save to NVS 5 s after the last change + manual save from web UI |
 | WiFi watchdog | Automatic reconnect if the connection drops |
@@ -55,6 +58,44 @@ HTTP API used by the page (usable from scripts too):
 | `GET /set/wave?v=<0..3>` | Set waveform (0 sine, 1 triangle, 2 square, 3 square/2) |
 | `GET /set/step?v=<0..7>` | Set frequency step (0 = 0.1 Hz … 7 = 1 MHz) |
 | `GET /save` | Persist current settings to NVS |
+| `GET /sweep/start?f0=&f1=&t=&mode=` | Frequency sweep f0 → f1 Hz over `t` seconds, `mode` = `lin` \| `log` |
+| `GET /sweep/stop` | Stop sweep (frequency stays at its current value) |
+
+Every `/set/*` and `/sweep/*` endpoint replies with the same JSON as `/status`,
+reflecting the state actually applied (values are clamped to valid ranges).
+
+<details>
+<summary><b>curl examples</b> — scripts, Robot Framework, lab automation</summary>
+
+```bash
+# Device state: frequency, waveform, sweep, RSSI, heap, uptime
+curl http://dds-gen.local/status
+
+# 10 kHz sine
+curl "http://dds-gen.local/set/freq?v=10000"
+curl "http://dds-gen.local/set/wave?v=0"      # 0 sine, 1 tri, 2 sqr, 3 sqr/2
+
+# Log sweep 10 Hz -> 100 kHz over 10 s (Bode plot on the scope)
+curl "http://dds-gen.local/sweep/start?f0=10&f1=100000&t=10&mode=log"
+curl http://dds-gen.local/sweep/stop
+
+# Persist settings to NVS
+curl http://dds-gen.local/save
+```
+
+Robot Framework setup example:
+
+```robotframework
+*** Settings ***
+Library    RequestsLibrary
+
+*** Keywords ***
+Set Reference Signal
+    [Arguments]    ${freq}    ${wave}=0
+    GET    http://dds-gen.local/set/freq    params=v=${freq}
+    GET    http://dds-gen.local/set/wave    params=v=${wave}
+```
+</details>
 
 ---
 
