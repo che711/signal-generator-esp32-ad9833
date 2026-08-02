@@ -652,7 +652,24 @@ bool WebUI::_withGen(std::function<void()> fn, TickType_t timeout) {
 // ── WiFi ──────────────────────────────────────────────────
 void WebUI::_connectWiFi() {
     Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
+
+    // Лог причины обрыва — регистрируем один раз.
+    // Коды: 200 BEACON_TIMEOUT / 201 NO_AP_FOUND — радио или питание;
+    //       8 — точка сняла ассоциацию сама; 2/15/202 — аутентификация
+    static bool evtHooked = false;
+    if (!evtHooked) {
+        evtHooked = true;
+        WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info){
+            Serial.printf("[WiFi] disconnected, reason=%d\n",
+                          (int)info.wifi_sta_disconnected.reason);
+        }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+    }
+
+    WiFi.persistent(false);       // не переписывать креды во флеш каждый begin()
     WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);         // modem sleep OFF: девайс на проводе, латентность
+                                  // и пропуски маяков важнее ~60 мА экономии
+    WiFi.setAutoReconnect(true);  // стек реконнектится сам, вотчдог — страховка
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     uint32_t start = millis();
     while (WiFi.status() != WL_CONNECTED &&
