@@ -60,6 +60,7 @@ HTTP API used by the page (usable from scripts too):
 | `GET /set/step?v=<0..7>` | Set frequency step (0 = 0.1 Hz … 7 = 1 MHz) |
 | `GET /set/out?v=<0\|1>` | Output enable: `0` mutes the DDS (sleep, ~0 V out), `1` restores the selected waveform |
 | `GET /save` | Persist current settings to NVS |
+| `GET /reboot` | Save settings, then restart the device (`ESP.restart()`) |
 | `GET /sweep/start?f0=&f1=&t=&mode=` | Frequency sweep f0 → f1 Hz over `t` seconds, `mode` = `lin` \| `log` |
 | `GET /sweep/stop` | Stop sweep (frequency stays at its current value) |
 

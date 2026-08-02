@@ -148,6 +148,12 @@ body{
 .card.folded .card-body{display:none}
 .card.folded .card-title{margin-bottom:0}
 .card.folded .chev{transform:rotate(-90deg)}
+.btn-reboot{
+  width:100%;margin-top:14px;padding:11px;border-radius:10px;
+  border:1px solid var(--border);background:transparent;color:var(--text3);
+  font-size:.88rem;font-weight:600;cursor:pointer;transition:all .15s;
+}
+.btn-reboot:hover{border-color:#a03030;color:#e05555}
 .btn-out{
   width:100%;padding:16px;border-radius:12px;border:2px solid var(--border);
   font-size:1.05rem;font-weight:800;letter-spacing:.08em;cursor:pointer;
@@ -351,6 +357,7 @@ details.api-details[open] summary::before{content:'\25BE  '}
     <span class="stat-label">Uptime</span>
     <span class="stat-val" id="syUp" style="color:var(--text2)">—</span>
   </div>
+  <button class="btn-reboot" onclick="rebootDev()">&#8635;&ensp;Reboot device</button>
   </div>
 </div>
 
@@ -553,6 +560,7 @@ function buildApiList(){
     ['Stop sweep (freq stays where it was)',           `curl http://${h}/sweep/stop`],
     ['Output enable: 1 on, 0 off (mute, keeps settings)', `curl "http://${h}/set/out?v=0"`],
     ['Persist current settings to NVS',                `curl http://${h}/save`],
+    ['Reboot the device (settings saved first)',       `curl http://${h}/reboot`],
   ];
   document.getElementById('apiList').innerHTML = EX.map(([d,c],i)=>`
     <div class="api-item">
@@ -576,6 +584,15 @@ async function copyCmd(i){
     ta.select(); document.execCommand('copy'); ta.remove();
     toast('Copied \u2713');
   }
+}
+
+// ── Reboot ──
+async function rebootDev(){
+  if(!confirm('Reboot the generator?')) return;
+  try{ await fetch('/reboot'); }catch(e){}
+  toast('Rebooting\u2026');
+  // страница сама оживёт: poll() каждые 2 с начнёт получать /status,
+  // как только девайс поднимет Wi-Fi
 }
 
 // ── Collapsible cards (state in localStorage) ──
@@ -709,6 +726,7 @@ void WebUI::_registerRoutes() {
     _server.on("/set/step", [this](){ _handleSetStep(); });
     _server.on("/save",        [this](){ _handleSave();       });
     _server.on("/set/out",     [this](){ _handleSetOut();     });
+    _server.on("/reboot",      [this](){ _handleReboot();     });
     _server.on("/sweep/start", [this](){ _handleSweepStart(); });
     _server.on("/sweep/stop",  [this](){ _handleSweepStop();  });
     _server.onNotFound([this](){ _server.send(404, "text/plain", "not found"); });
@@ -823,6 +841,17 @@ void WebUI::_handleSetStep() {
 void WebUI::_handleSave() {
     _withGen([&](){ _gen.saveSettings(); });
     _server.send(200, "text/plain", "ok");
+}
+
+void WebUI::_handleReboot() {
+    // Сначала сохранить настройки: автосейв дебаунсится 5 с, и ребут сразу
+    // после смены частоты иначе теряет её
+    _withGen([&](){ _gen.saveSettings(); });
+    _server.send(200, "text/plain", "rebooting");
+    _server.client().stop();     // дожать ответ клиенту до рестарта
+    Serial.println("[Web] reboot requested");
+    delay(200);
+    ESP.restart();
 }
 
 void WebUI::_handleSetOut() {

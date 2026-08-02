@@ -67,6 +67,7 @@ private:
     void _handleSetStep();
     void _handleSave();
     void _handleSetOut();
+    void _handleReboot();
     void _handleSweepStart();
     void _handleSweepStop();
 
