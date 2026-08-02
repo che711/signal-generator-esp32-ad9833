@@ -141,6 +141,13 @@ body{
 .bar-free{background:var(--green)}
 .bar-pct{font-size:.82rem;font-weight:700;color:var(--text2);width:38px;text-align:right;flex-shrink:0}
 .bar-val{font-size:.82rem;font-weight:700;color:var(--green);width:60px;text-align:right;flex-shrink:0}
+.card-title.tgl{cursor:pointer;user-select:none}
+.card-title.tgl .chev{
+  color:var(--purple);font-size:.9rem;transition:transform .2s;margin-left:2px
+}
+.card.folded .card-body{display:none}
+.card.folded .card-title{margin-bottom:0}
+.card.folded .chev{transform:rotate(-90deg)}
 .btn-out{
   width:100%;padding:16px;border-radius:12px;border:2px solid var(--border);
   font-size:1.05rem;font-weight:800;letter-spacing:.08em;cursor:pointer;
@@ -258,7 +265,8 @@ details.api-details[open] summary::before{content:'\25BE  '}
 </div>
 
 <div class="card">
-  <div class="card-title">Frequency Step</div>
+  <div class="card-title tgl" data-k="step" onclick="tglCard(this)">Frequency Step<span class="chev">&#9662;</span></div>
+  <div class="card-body">
   <div class="step-grid">
     <button class="sbtn" id="s0" onclick="setStep(0)">0.1 Hz</button>
     <button class="sbtn" id="s1" onclick="setStep(1)">1 Hz</button>
@@ -269,10 +277,12 @@ details.api-details[open] summary::before{content:'\25BE  '}
     <button class="sbtn" id="s6" onclick="setStep(6)">100 kHz</button>
     <button class="sbtn" id="s7" onclick="setStep(7)">1 MHz</button>
   </div>
+  </div>
 </div>
 
 <div class="card">
-  <div class="card-title">Sweep</div>
+  <div class="card-title tgl" data-k="sweep" onclick="tglCard(this)">Sweep<span class="chev">&#9662;</span></div>
+  <div class="card-body">
   <div class="sw-grid">
     <div><div class="sw-lbl">From, Hz</div>
       <input type="number" id="swF0" value="100" min="0.1" max="12000000" step="any"></div>
@@ -291,6 +301,7 @@ details.api-details[open] summary::before{content:'\25BE  '}
     <div class="bar-pct" id="pSw">0%</div>
   </div>
   <button class="btn-sweep" id="swBtn" onclick="toggleSweep()">&#9654;&ensp;Start sweep</button>
+  </div>
 </div>
 
 <div class="card">
@@ -302,7 +313,8 @@ details.api-details[open] summary::before{content:'\25BE  '}
 </div>
 
 <div class="card">
-  <div class="card-title">System</div>
+  <div class="card-title tgl" data-k="system" onclick="tglCard(this)">System<span class="chev">&#9662;</span></div>
+  <div class="card-body">
   <div class="stat-row">
     <span class="stat-label">WiFi</span>
     <span class="stat-val" id="sySsid" style="color:var(--green)">—</span>
@@ -339,23 +351,11 @@ details.api-details[open] summary::before{content:'\25BE  '}
     <span class="stat-label">Uptime</span>
     <span class="stat-val" id="syUp" style="color:var(--text2)">—</span>
   </div>
+  </div>
 </div>
 
-<div class="card">
-  <div class="card-title">Status</div>
-  <div class="stat-row">
-    <span class="stat-label">Frequency</span>
-    <span class="stat-val" id="stFreq">—</span>
-  </div>
-  <div class="stat-row">
-    <span class="stat-label">Waveform</span>
-    <span class="stat-val" id="stWave">—</span>
-  </div>
-  <div class="stat-row">
-    <span class="stat-label">Step</span>
-    <span class="stat-val" id="stStep" style="color:var(--green)">—</span>
-  </div>
-  <button class="btn-save" onclick="saveSettings()">&#128190;&ensp;Save to memory</button>
+<div class="card" style="padding:16px">
+  <button class="btn-save" style="margin-top:0" onclick="saveSettings()">&#128190;&ensp;Save to memory</button>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -387,9 +387,6 @@ function applyStatus(d){
   // раньше poll() каждые 2 c сбрасывал недонабранное значение
   const fin=document.getElementById('freqIn');
   if(document.activeElement!==fin) fin.value=d.freq;
-  document.getElementById('stFreq').textContent = v+' '+u;
-  document.getElementById('stWave').textContent = d.wave;
-  document.getElementById('stStep').textContent = d.step;
 
   for(let i=0;i<4;i++)
     document.getElementById('w'+i).classList.toggle('active',i===d.waveIdx);
@@ -531,6 +528,7 @@ function applySweep(sw){
   const btn=document.getElementById('swBtn');
   const row=document.getElementById('swProgRow');
   if(sw.active){
+    btn.closest('.card').classList.remove('folded');
     btn.innerHTML='&#9632;&ensp;Stop sweep';
     btn.classList.add('stop');
     row.style.display='flex';
@@ -579,6 +577,20 @@ async function copyCmd(i){
     toast('Copied \u2713');
   }
 }
+
+// ── Collapsible cards (state in localStorage) ──
+function tglCard(el){
+  const card=el.parentElement;
+  card.classList.toggle('folded');
+  try{localStorage.setItem('fold_'+el.dataset.k,
+      card.classList.contains('folded')?'1':'0');}catch(e){}
+}
+document.querySelectorAll('.card-title.tgl').forEach(el=>{
+  try{
+    if(localStorage.getItem('fold_'+el.dataset.k)==='1')
+      el.parentElement.classList.add('folded');
+  }catch(e){}
+});
 
 buildApiList();
 poll();
