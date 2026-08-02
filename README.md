@@ -56,13 +56,13 @@ HTTP API used by the page (usable from scripts too):
 | -------- | ------ |
 | `GET /status` | JSON: frequency, waveform, step + system stats |
 | `GET /set/freq?v=<hz>` | Set frequency (0.1 – 12 000 000 Hz) |
-| `GET /set/wave?v=<0..3>` | Set waveform (0 sine, 1 triangle, 2 square, 3 square/2) |
-| `GET /set/step?v=<0..7>` | Set frequency step (0 = 0.1 Hz … 7 = 1 MHz) |
+| `GET /set/wave?v=<name>` | Waveform: `sine`, `tri`, `sqr`, `sqr2` (legacy `0`-`3` accepted) |
+| `GET /set/step?v=<size>` | Encoder step, Hz added per click: `0.1`,`1`,`10`,`100`,`1k`,`10k`,`100k`,`1m` (legacy `0`-`7`) |
 | `GET /set/out?v=<0\|1>` | Output enable: `0` mutes the DDS (sleep, ~0 V out), `1` restores the selected waveform |
 | `GET /save` | Persist current settings to NVS |
 | `GET /reboot` | Save settings, then restart the device (`ESP.restart()`) |
 | `GET /sweep/start?f0=&f1=&t=&mode=` | Frequency sweep f0 → f1 Hz over `t` seconds, `mode` = `lin` \| `log` |
-| `GET /sweep/stop` | Stop sweep (frequency stays at its current value) |
+| `GET /sweep/stop` | Stop sweep mid-run: frequency stays at its current value. A sweep that finishes on its own returns to the pre-sweep frequency |
 
 Every `/set/*` and `/sweep/*` endpoint replies with the same JSON as `/status`,
 reflecting the state actually applied (values are clamped to valid ranges).
@@ -76,7 +76,7 @@ curl http://dds-gen.local/status
 
 # 10 kHz sine
 curl "http://dds-gen.local/set/freq?v=10000"
-curl "http://dds-gen.local/set/wave?v=0"      # 0 sine, 1 tri, 2 sqr, 3 sqr/2
+curl "http://dds-gen.local/set/wave?v=sine"   # sine | tri | sqr | sqr2
 
 # Log sweep 10 Hz -> 100 kHz over 10 s (Bode plot on the scope)
 curl "http://dds-gen.local/sweep/start?f0=10&f1=100000&t=10&mode=log"

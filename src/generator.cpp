@@ -98,6 +98,7 @@ bool SignalGenerator::sweepStart(float f0, float f1, uint32_t durMs, bool logMod
     if (f0 == f1)                       return false;
     if (durMs < SWEEP_MIN_MS || durMs > SWEEP_MAX_MS) return false;
 
+    _swRetFreq = _freq;         // запомнить, куда вернуться по окончании
     _swF0      = f0;
     _swF1      = f1;
     _swDurMs   = durMs;
@@ -123,10 +124,10 @@ bool SignalGenerator::sweepTick(uint32_t nowMs) {
     _swTickMs = nowMs;
 
     float p = (float)(nowMs - _swStartMs) / (float)_swDurMs;
-    if (p >= 1.0f) {                    // финиш: точно f1 и стоп
-        _applyFreq(_swF1);
-        _swActive = false;
-        Serial.println("[GEN] sweep done");
+    if (p >= 1.0f) {                    // финиш: вернуться к частоте до sweep.
+        _swActive = false;              // Ручной /sweep/stop, наоборот, оставляет
+        _applyFreq(_swRetFreq);         // текущую — чтобы "поймать" точку вручную
+        Serial.printf("[GEN] sweep done, back to %.2f Hz\n", _freq);
         return true;
     }
 

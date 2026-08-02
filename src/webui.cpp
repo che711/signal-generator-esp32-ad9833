@@ -554,10 +554,10 @@ function buildApiList(){
   const EX=[
     ['Device state (freq, wave, RSSI, heap, uptime)', `curl http://${h}/status`],
     ['Set frequency: 10 kHz',                          `curl "http://${h}/set/freq?v=10000"`],
-    ['Waveform: 0 sine, 1 tri, 2 square, 3 square/2',  `curl "http://${h}/set/wave?v=0"`],
-    ['Encoder step: 0 = 0.1 Hz ... 7 = 1 MHz',         `curl "http://${h}/set/step?v=4"`],
-    ['Log sweep 10 Hz to 100 kHz over 10 s',           `curl "http://${h}/sweep/start?f0=10&f1=100000&t=10&mode=log"`],
-    ['Stop sweep (freq stays where it was)',           `curl http://${h}/sweep/stop`],
+    ['Waveform: sine | tri | sqr | sqr2',              `curl "http://${h}/set/wave?v=sine"`],
+    ['Encoder step, Hz per click: 0.1 ... 1m',         `curl "http://${h}/set/step?v=1k"`],
+    ['Log sweep 10 Hz to 100 kHz over 10 s (returns to prior freq when done)', `curl "http://${h}/sweep/start?f0=10&f1=100000&t=10&mode=log"`],
+    ['Stop sweep mid-run (freq stays where it was)',   `curl http://${h}/sweep/stop`],
     ['Output enable: 1 on, 0 off (mute, keeps settings)', `curl "http://${h}/set/out?v=0"`],
     ['Persist current settings to NVS',                `curl http://${h}/save`],
     ['Reboot the device (settings saved first)',       `curl http://${h}/reboot`],
@@ -813,9 +813,20 @@ void WebUI::_handleSetFreq() {
 }
 
 void WebUI::_handleSetWave() {
-    int idx = _server.arg("v").toInt();
-    if (!_server.hasArg("v") || idx < 0 || idx >= WAVE_COUNT) {
-        _server.send(400, "text/plain", "wave index out of range");
+    if (!_server.hasArg("v")) {
+        _server.send(400, "text/plain", "usage: /set/wave?v=sine|tri|sqr|sqr2");
+        return;
+    }
+    String v = _server.arg("v");
+    v.toLowerCase();
+    int idx = -1;
+    if      (v == "sine" || v == "sin")                       idx = WAVE_SINE;
+    else if (v == "tri"  || v == "triangle")                  idx = WAVE_TRIANGLE;
+    else if (v == "sqr"  || v == "square")                    idx = WAVE_SQUARE;
+    else if (v == "sqr2" || v == "square2" || v == "sqr/2")   idx = WAVE_SQUARE2;
+    else if (v.length() && isDigit(v[0]))                     idx = v.toInt();  // legacy 0-3
+    if (idx < 0 || idx >= WAVE_COUNT) {
+        _server.send(400, "text/plain", "bad wave: sine|tri|sqr|sqr2 (or 0-3)");
         return;
     }
     const char* lbl = "";
@@ -826,9 +837,24 @@ void WebUI::_handleSetWave() {
 }
 
 void WebUI::_handleSetStep() {
-    int idx = _server.arg("v").toInt();
-    if (!_server.hasArg("v") || idx < 0 || idx >= STEP_COUNT) {
-        _server.send(400, "text/plain", "step index out of range");
+    if (!_server.hasArg("v")) {
+        _server.send(400, "text/plain",
+            "usage: /set/step?v=0.1|1|10|100|1k|10k|100k|1m (Hz per encoder click)");
+        return;
+    }
+    String v = _server.arg("v");
+    v.toLowerCase();
+    // Шаг энкодера: на сколько Гц двигается частота за один щелчок ручки
+    static const char* names[STEP_COUNT] =
+        {"0.1", "1", "10", "100", "1k", "10k", "100k", "1m"};
+    int idx = -1;
+    for (int i = 0; i < STEP_COUNT; i++)
+        if (v == names[i]) { idx = i; break; }
+    if (idx < 0 && v.length() && isDigit(v[0]) && v.length() == 1)
+        idx = v.toInt();                                      // legacy 0-7
+    if (idx < 0 || idx >= STEP_COUNT) {
+        _server.send(400, "text/plain",
+            "bad step: 0.1|1|10|100|1k|10k|100k|1m (or 0-7)");
         return;
     }
     const char* lbl = "";

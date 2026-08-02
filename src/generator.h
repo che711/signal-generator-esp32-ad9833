@@ -92,6 +92,7 @@ private:
     uint32_t _swDurMs   = 0;
     uint32_t _swStartMs = 0;
     uint32_t _swTickMs  = 0;
+    float    _swRetFreq = 0;   // частота до старта sweep — восстановить по финишу
 
     // Установка частоты БЕЗ остановки sweep (для sweepTick)
     void _applyFreq(float hz);
