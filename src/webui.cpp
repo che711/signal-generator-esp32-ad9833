@@ -357,12 +357,14 @@ details.api-details[open] summary::before{content:'\25BE  '}
     <span class="stat-label">Uptime</span>
     <span class="stat-val" id="syUp" style="color:var(--text2)">—</span>
   </div>
-  <button class="btn-reboot" onclick="rebootDev()">&#8635;&ensp;Reboot device</button>
   </div>
 </div>
 
 <div class="card" style="padding:16px">
-  <button class="btn-save" style="margin-top:0" onclick="saveSettings()">&#128190;&ensp;Save to memory</button>
+  <div style="display:flex;gap:10px">
+    <button class="btn-save" style="margin-top:0;flex:1" onclick="saveSettings()">&#128190;&ensp;Save to memory</button>
+    <button class="btn-reboot" style="margin-top:0;width:auto;flex:1" onclick="rebootDev()">&#8635;&ensp;Reboot</button>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
