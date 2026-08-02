@@ -4,17 +4,17 @@
 #include "display.h"
 #include "webui.h"
 
-// ── Глобальные объекты ────────────────────────────────────
-// Мьютекс защищает SignalGenerator от одновременного доступа
-// из UI-задачи (ядро 1) и Web-задачи (ядро 0)
+// ── Globals ───────────────────────────────────────────────
+// The mutex guards SignalGenerator against concurrent access
+// from the UI task (core 1) and the web task (core 0)
 SemaphoreHandle_t genMutex;
 
 SignalGenerator gen;
 Encoder         enc;
 Display         disp;
-WebUI*          web;   // указатель — создаём после мьютекса
+WebUI*          web;   // pointer — constructed after the mutex exists
 
-// ── Web-задача на ядре 0 ──────────────────────────────────
+// ── Web task on core 0 ────────────────────────────────────
 void webTask(void* param) {
     web->begin();
 
@@ -22,28 +22,28 @@ void webTask(void* param) {
         web->handle();
         web->checkWiFi();
         web->updateCpuLoad();
-        vTaskDelay(pdMS_TO_TICKS(1));   // уступить планировщику
+        vTaskDelay(pdMS_TO_TICKS(1));   // yield to the scheduler
     }
 }
 
 // ── setup ─────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
-    Serial.println("[DDS] Booting v5...");
+    Serial.println("[DDS] Booting...");
 
-    // Мьютекс создаём первым — до любых обращений к gen
+    // Create the mutex first — before anything touches gen
     genMutex = xSemaphoreCreateMutex();
 
     disp.begin();
 
-    // gen.begin() обращается к SPI и NVS — мьютекс уже готов,
-    // но задача ещё не запущена, поэтому берём напрямую
+    // gen.begin() talks to SPI and NVS; the web task is not running yet,
+    // so it is safe to call without taking the mutex
     gen.begin();
     enc.begin();
 
     disp.drawConnecting(WIFI_SSID);
 
-    // Создаём WebUI с мьютексом и запускаем задачу на ядре 0
+    // Create the WebUI with the mutex and start its task on core 0
     web = new WebUI(gen, genMutex);
     xTaskCreatePinnedToCore(
         webTask,
@@ -55,8 +55,7 @@ void setup() {
         TASK_WEB_CORE
     );
 
-    // Небольшая пауза, чтобы webTask успел подключиться к WiFi
-    // прежде чем мы перейдём к основному loop
+    // Give webTask a moment to bring up WiFi before entering the main loop
     uint32_t waitStart = millis();
     while (!web->isConnected() && millis() - waitStart < WIFI_CONNECT_TIMEOUT_MS + 1000)
         delay(100);
@@ -69,22 +68,22 @@ void setup() {
     Serial.println("[DDS] Ready");
 }
 
-// ── loop — UI на ядре 1 ───────────────────────────────────
-// Web/WiFi/CPU обслуживаются задачей webTask на ядре 0
+// ── loop — UI on core 1 ───────────────────────────────────
+// Web/WiFi/CPU are serviced by webTask on core 0
 static bool     needRedraw = true;
 static uint32_t lastSaveMs = 0;
 static uint32_t lastDrawMs = 0;
 
 void loop() {
-    // БАГ был здесь: изменения из веб-интерфейса не обновляли OLED
-    // (needRedraw ставился только энкодером) и не автосохранялись
+    // Changes made from the web UI must also refresh the OLED and
+    // restart the autosave timer
     if (web->consumeChanged()) {
         needRedraw = true;
         lastSaveMs = millis();
     }
 
-    // Sweep: тик двигает частоту. sweepActive() читается без мьютекса —
-    // это одиночный bool, худший случай: один лишний/поздний захват
+    // Sweep: each tick moves the frequency. sweepActive() is read without
+    // the mutex — it is a lone bool, worst case is one extra/late take
     if (gen.sweepActive()) {
         if (xSemaphoreTake(genMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
             if (gen.sweepTick(millis())) needRedraw = true;
@@ -141,7 +140,7 @@ void loop() {
         lastSaveMs = millis();
     }
 
-    // Автосохранение через AUTOSAVE_MS после последнего изменения
+    // Autosave AUTOSAVE_MS after the last change
     if (lastSaveMs > 0 && millis() - lastSaveMs > AUTOSAVE_MS) {
         if (xSemaphoreTake(genMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
             gen.saveSettings();
@@ -150,17 +149,16 @@ void loop() {
         lastSaveMs = 0;
     }
 
-    // Перерисовка дисплея ~30 fps, только при изменениях
+    // Redraw at ~30 fps, and only when something changed
     uint32_t now = millis();
     if (needRedraw && now - lastDrawMs > 33) {
-        // ГОНКА была здесь: freqLabel()/waveLabel()/stepLabel() читались
-        // без мьютекса, пока web-задача на ядре 0 могла менять состояние.
-        // Снимаем снапшот под мьютексом, рисуем — уже без него
-        // (sendBuffer() по I2C ~22 мс — держать мьютекс столько нельзя).
+        // Snapshot the state under the mutex, then draw without it:
+        // sendBuffer() over I2C takes ~22 ms, far too long to hold the
+        // mutex while the web task on core 0 may want it.
         String freqStr, waveStr, stepStr;
         if (xSemaphoreTake(genMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             freqStr = gen.freqLabel();
-            // Выход выключен — вместо формы показываем OFF
+            // Output disabled — show OFF instead of the waveform
             waveStr = gen.getOutput() ? gen.waveLabel() : "OFF";
             stepStr = gen.stepLabel();
             xSemaphoreGive(genMutex);
@@ -176,10 +174,9 @@ void loop() {
             lastDrawMs = now;
             needRedraw = false;
         }
-        // мьютекс не получен → needRedraw остаётся true, перерисуем в
-        // следующей итерации loop()
+        // mutex not acquired → needRedraw stays true, redraw next iteration
     }
 
-    // Небольшая задержка чтобы не монополизировать ядро 1
+    // Short delay so we do not hog core 1
     vTaskDelay(pdMS_TO_TICKS(5));
 }

@@ -5,16 +5,14 @@ volatile uint8_t Encoder::_s_state = 0;
 portMUX_TYPE     Encoder::_s_mux   = portMUX_INITIALIZER_UNLOCKED;
 
 // ─────────────────────────────────────────────────────────
-// Квадратурный декодер на таблице переходов.
+// Table-driven quadrature decoder.
 //
-// Раньше энкодер опрашивался в loop(), а каждый щелчок запускал
-// перерисовку OLED (~десятки мс блокировки I2C) — фронты терялись,
-// вращение получалось рывками, направление определялось неверно.
+// Both pins (CLK+DT) are interrupt-driven, so edges are never missed
+// while the OLED redraw blocks I2C for tens of milliseconds.
 //
-// Теперь оба пина (CLK+DT) висят на прерываниях. Индекс таблицы —
-// 4 бита: (пред. состояние << 2) | текущее. Валидные переходы дают
-// ±1, невалидные (дребезг, пропуск) — 0. Это одновременно и
-// направление, и программный debounce: delay() больше не нужен.
+// The table index is 4 bits: (previous state << 2) | current state.
+// Valid transitions yield ±1, invalid ones (bounce, missed edge) yield 0.
+// That gives direction and software debounce at once — no delay() needed.
 // ─────────────────────────────────────────────────────────
 static const int8_t QUAD_TABLE[16] = {
      0, -1, +1,  0,
@@ -23,7 +21,7 @@ static const int8_t QUAD_TABLE[16] = {
      0, +1, -1,  0
 };
 
-// KY-040: 4 квадратурных перехода на один щелчок (детент)
+// KY-040: 4 quadrature transitions per detent (one click)
 #define TICKS_PER_DETENT 4
 
 void IRAM_ATTR Encoder::_isr() {
@@ -42,9 +40,9 @@ Encoder::Encoder()
 {}
 
 void Encoder::begin() {
-    // GPIO 34/35 — input-only, БЕЗ внутренних pull-up!
-    // Модуль KY-040 имеет свои подтяжки на CLK/DT; если используется
-    // "голый" энкодер — нужны внешние резисторы 10k на 3.3V.
+    // GPIO 34/35 are input-only — NO internal pull-ups available!
+    // The KY-040 module has its own pull-ups on CLK/DT; a bare encoder
+    // needs external 10k resistors to 3.3 V.
     pinMode(ENC_CLK_PIN, INPUT);
     pinMode(ENC_DT_PIN,  INPUT);
     pinMode(ENC_SW_PIN,  INPUT_PULLUP);
@@ -55,8 +53,8 @@ void Encoder::begin() {
     attachInterrupt(digitalPinToInterrupt(ENC_DT_PIN),  _isr, CHANGE);
 }
 
-// Кнопка опрашивается первой: _pollRotation() смотрит на её
-// отфильтрованное состояние, чтобы гасить паразитные тики при клике
+// The button is polled first: _pollRotation() looks at its debounced state
+// to suppress spurious ticks generated while clicking
 EncoderEvent Encoder::poll() {
     EncoderEvent ev = _pollButton();
     if (ev != ENC_NONE) return ev;
@@ -64,14 +62,14 @@ EncoderEvent Encoder::poll() {
 }
 
 EncoderEvent Encoder::_pollRotation() {
-    // Атомарно забрать накопленное из ISR
+    // Atomically take what the ISR has accumulated
     portENTER_CRITICAL(&_s_mux);
     int32_t d = _s_delta;
     _s_delta = 0;
     portEXIT_CRITICAL(&_s_mux);
 
-    // Пока кнопка нажата, вал механически дёргается — отбрасываем
-    // паразитные тики, чтобы клик не сдвигал частоту
+    // While the button is held the shaft twitches mechanically — drop those
+    // spurious ticks so a click does not shift the frequency
     if (_stableState == LOW || _btnPending) { _accum = 0; return ENC_NONE; }
 
     _accum += d;
@@ -85,21 +83,20 @@ EncoderEvent Encoder::_pollRotation() {
     _fast = ((now - _lastDetentMs) < ACCEL_THRESHOLD);
     _lastDetentMs = now;
 
-    // Если направление инвертировано относительно ожидаемого —
-    // поменяй местами провода CLK/DT или знаки здесь.
+    // If the direction comes out inverted, swap the CLK/DT wires
+    // or flip the signs here.
     return (dir > 0) ? ENC_CW : ENC_CCW;
 }
 
-// БАГ был здесь: одиночная перепроверка через 5 мс попадала на дребезг
-// KY-040 (5-30 мс) — нажатие терялось целиком, клики не регистрировались,
-// и режим сигнала через энкодер не переключался вовсе.
-// Теперь: любой сырой фронт перезапускает таймер, состояние принимается
-// только после BTN_DEBOUNCE_MS стабильности. Без блокирующих delay().
+// Time-based debounce: any raw edge restarts the timer, and a level is
+// accepted only after BTN_DEBOUNCE_MS of stability. A single re-check would
+// land inside the KY-040 bounce window (5-30 ms) and lose the press.
+// No blocking delay() involved.
 EncoderEvent Encoder::_pollButton() {
     int raw = digitalRead(ENC_SW_PIN);
     uint32_t now = millis();
 
-    if (raw != _lastRaw) {          // сырой фронт — рестарт фильтра
+    if (raw != _lastRaw) {          // raw edge — restart the filter
         _lastRaw = raw;
         _lastEdgeMs = now;
         return ENC_NONE;
@@ -107,12 +104,12 @@ EncoderEvent Encoder::_pollButton() {
 
     if (now - _lastEdgeMs < BTN_DEBOUNCE_MS) return ENC_NONE;
 
-    if (raw != _stableState) {      // состояние стабильно и изменилось
+    if (raw != _stableState) {      // level is stable and has changed
         _stableState = raw;
-        if (raw == LOW) {           // подтверждённое нажатие
+        if (raw == LOW) {           // confirmed press
             _btnPressMs = now;
             _btnPending = true;
-        } else if (_btnPending) {   // подтверждённое отпускание
+        } else if (_btnPending) {   // confirmed release
             _btnPending = false;
             uint32_t held = now - _btnPressMs;
             return (held >= LONG_PRESS_MS) ? ENC_LONG_CLICK : ENC_CLICK;

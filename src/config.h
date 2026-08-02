@@ -15,15 +15,15 @@
 // ── FreeRTOS tasks ────────────────────────────────────────
 #define TASK_WEB_STACK        8192
 #define TASK_WEB_PRIORITY        1
-#define TASK_WEB_CORE            0    // WebUI на ядре 0
+#define TASK_WEB_CORE            0    // WebUI runs on core 0
 
 // ── Sweep ─────────────────────────────────────────────────
-#define SWEEP_TICK_MS      10    // период пересчёта частоты (100 шагов/с)
-#define SWEEP_MIN_MS      200    // минимальная длительность прохода
-#define SWEEP_MAX_MS  3600000    // максимум 1 час
+#define SWEEP_TICK_MS      10    // frequency recalc period (100 steps/s)
+#define SWEEP_MIN_MS      200    // minimum sweep duration
+#define SWEEP_MAX_MS  3600000    // maximum 1 hour
 
 // ── Autosave ──────────────────────────────────────────────
-#define AUTOSAVE_MS           5000    // сохранить через 5 сек после изменения
+#define AUTOSAVE_MS           5000    // save 5 s after the last change
 
 // ── NVS namespace ─────────────────────────────────────────
 #define NVS_NAMESPACE           "ddsgen"
@@ -44,7 +44,7 @@
 #define ENC_SW_PIN              32
 
 // ── Encoder timing ────────────────────────────────────────
-#define BTN_DEBOUNCE_MS   20    // ms стабильности для кнопки (дребезг KY-040 5-30 мс)
+#define BTN_DEBOUNCE_MS   20    // ms of stable level (KY-040 bounces 5-30 ms)
 #define LONG_PRESS_MS    800
-#define ACCEL_THRESHOLD   80    // ms — быстрое вращение
-#define ACCEL_MULTIPLIER  10    // шаг × 10 при быстром вращении
+#define ACCEL_THRESHOLD   80    // ms between detents to count as fast rotation
+#define ACCEL_MULTIPLIER  10    // step x 10 while spinning fast

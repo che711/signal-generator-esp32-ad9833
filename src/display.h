@@ -22,7 +22,7 @@ public:
     void drawIP(const String& ip);
     void drawSplash();
 
-    // Статус WiFi без перерисовки частоты
+    // WiFi status screen, does not redraw the frequency
     void drawConnecting(const String& ssid);
 
 private:

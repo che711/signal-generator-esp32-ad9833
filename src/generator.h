@@ -36,7 +36,7 @@ public:
     void begin();
     void saveSettings();
 
-    // setFrequency возвращает реально установленное значение
+    // setFrequency returns the value that was actually applied
     float setFrequency(float hz);
     void  setWaveByIndex(int idx);
     void  setStepByIndex(int idx);
@@ -47,19 +47,19 @@ public:
     void nextStep();
 
     // ── Output enable ─────────────────────────────────────
-    // false: AD9833_OFF (sleep DAC+MCLK, выход ~0 В) + стоп sweep.
-    // Форма и частота сохраняются и применяются при включении
+    // false: AD9833_OFF (sleep DAC+MCLK, output ~0 V) + stops the sweep.
+    // Waveform and frequency are kept and reapplied when turned back on
     void setOutput(bool on);
     bool getOutput() const { return _outOn; }
 
     // ── Sweep ─────────────────────────────────────────────
-    // Линейный или логарифмический проход f0 → f1 за durMs.
-    // false — параметры вне диапазона. Ручной setFrequency()
-    // (энкодер, веб) останавливает активный sweep.
+    // Linear or logarithmic run from f0 to f1 over durMs.
+    // Returns false if the parameters are out of range. A manual
+    // setFrequency() (encoder or web) cancels an active sweep.
     bool sweepStart(float f0, float f1, uint32_t durMs, bool logMode);
     void sweepStop();
     bool sweepActive()   const { return _swActive; }
-    // Вызывать из loop() ПОД мьютексом. true — частота изменилась
+    // Call from loop() WITH the mutex held. true — the frequency changed
     bool sweepTick(uint32_t nowMs);
     float    sweepF0()       const { return _swF0; }
     float    sweepF1()       const { return _swF1; }
@@ -92,9 +92,9 @@ private:
     uint32_t _swDurMs   = 0;
     uint32_t _swStartMs = 0;
     uint32_t _swTickMs  = 0;
-    float    _swRetFreq = 0;   // частота до старта sweep — восстановить по финишу
+    float    _swRetFreq = 0;   // freq before the sweep — restored on finish
 
-    // Установка частоты БЕЗ остановки sweep (для sweepTick)
+    // Set the frequency WITHOUT cancelling the sweep (used by sweepTick)
     void _applyFreq(float hz);
 
     void _applyWave();

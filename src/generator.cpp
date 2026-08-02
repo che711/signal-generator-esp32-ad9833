@@ -20,9 +20,9 @@ SignalGenerator::SignalGenerator()
 {}
 
 void SignalGenerator::begin() {
-    // MISO не нужен (AD9833 — write-only), и GPIO12 — страппинг-пин (MTDI):
-    // подтяжка на нём при загрузке переключает напряжение флеша и может
-    // сломать загрузку. Поэтому MISO = -1.
+    // MISO is unused (the AD9833 is write-only), and the default MISO pin
+    // GPIO12 is a strapping pin (MTDI): a pull-up on it at boot switches the
+    // flash voltage and can brick the boot. Hence MISO = -1.
     SPI.begin(GEN_SCK_PIN, -1, GEN_MOSI_PIN, GEN_CS_PIN);
     _dds.begin();
     _loadSettings();
@@ -52,7 +52,7 @@ void SignalGenerator::saveSettings() {
     _prefs.begin(NVS_NAMESPACE, false);
     bool changed = false;
 
-    // Пишем только если значение изменилось — экономим циклы записи Flash
+    // Write only what actually changed — saves flash erase/write cycles
     if (_prefs.getFloat("freq", -1.0f) != _freq)
         { _prefs.putFloat("freq", _freq); changed = true; }
     if (_prefs.getUChar("wave", 255) != (uint8_t)_wave)
@@ -68,7 +68,7 @@ void SignalGenerator::saveSettings() {
 // ── Frequency ─────────────────────────────────────────────
 
 float SignalGenerator::setFrequency(float hz) {
-    _swActive = false;          // ручное вмешательство останавливает sweep
+    _swActive = false;          // manual change cancels a running sweep
     _applyFreq(hz);
     return _freq;
 }
@@ -85,12 +85,13 @@ void SignalGenerator::stepDown() { setFrequency(_freq - getStepHz()); }
 
 // ── Sweep ─────────────────────────────────────────────────
 //
-// Каждые SWEEP_TICK_MS частота пересчитывается по прогрессу p = t/T:
-//   lin: f = f0 + (f1 - f0) * p          — равные шаги в герцах
-//   log: f = f0 * (f1/f0)^p              — равные шаги в октавах,
-//        правильный режим для АЧХ: декады 10→100→1k→10k Гц проходят
-//        за равное время, как на бумаге Боде
-// AD9833 меняет частоту без разрыва фазы — сигнал чистый, без щелчков.
+// Every SWEEP_TICK_MS the frequency is recomputed from progress p = t/T:
+//   lin: f = f0 + (f1 - f0) * p          — equal steps in hertz
+//   log: f = f0 * (f1/f0)^p              — equal steps in octaves; the right
+//        mode for frequency response, since decades 10→100→1k→10k Hz each
+//        take the same time, as on a Bode plot
+// The AD9833 changes frequency without a phase discontinuity, so the output
+// stays clean — no clicks.
 
 bool SignalGenerator::sweepStart(float f0, float f1, uint32_t durMs, bool logMode) {
     if (f0 < FREQ_MIN || f0 > FREQ_MAX) return false;
@@ -98,7 +99,7 @@ bool SignalGenerator::sweepStart(float f0, float f1, uint32_t durMs, bool logMod
     if (f0 == f1)                       return false;
     if (durMs < SWEEP_MIN_MS || durMs > SWEEP_MAX_MS) return false;
 
-    _swRetFreq = _freq;         // запомнить, куда вернуться по окончании
+    _swRetFreq = _freq;         // remember where to return when the sweep ends
     _swF0      = f0;
     _swF1      = f1;
     _swDurMs   = durMs;
@@ -124,9 +125,9 @@ bool SignalGenerator::sweepTick(uint32_t nowMs) {
     _swTickMs = nowMs;
 
     float p = (float)(nowMs - _swStartMs) / (float)_swDurMs;
-    if (p >= 1.0f) {                    // финиш: вернуться к частоте до sweep.
-        _swActive = false;              // Ручной /sweep/stop, наоборот, оставляет
-        _applyFreq(_swRetFreq);         // текущую — чтобы "поймать" точку вручную
+    if (p >= 1.0f) {                    // finished: restore the pre-sweep freq.
+        _swActive = false;              // A manual /sweep/stop instead keeps the
+        _applyFreq(_swRetFreq);         // current one, to catch a point by hand
         Serial.printf("[GEN] sweep done, back to %.2f Hz\n", _freq);
         return true;
     }
@@ -151,18 +152,18 @@ void SignalGenerator::setOutput(bool on) {
     if (on == _outOn) return;
     _outOn = on;
     if (on) {
-        _applyWave();               // восстановить выбранную форму
+        _applyWave();               // restore the selected waveform
     } else {
-        _swActive = false;          // OFF глушит и sweep
-        _dds.setWave(AD9833_OFF);   // sleep: DAC + MCLK, выход ~0 В
+        _swActive = false;          // OFF also kills a running sweep
+        _dds.setWave(AD9833_OFF);   // sleep: DAC + MCLK, output ~0 V
     }
     Serial.printf("[GEN] output %s\n", on ? "ON" : "OFF");
 }
 
 // ── Wave ──────────────────────────────────────────────────
 
-// Прямая установка по индексу. Отрицательный/некорректный idx игнорируем:
-// в C++ (-1 % 4) == -1, что дало бы выход за границы таблиц.
+// Set directly by index. Negative/out-of-range idx is ignored: in C++
+// (-1 % 4) == -1, which would index past the start of the label tables.
 void SignalGenerator::setWaveByIndex(int idx) {
     if (idx < 0 || idx >= WAVE_COUNT) return;
     _wave = (WaveType)idx;
@@ -174,7 +175,7 @@ void SignalGenerator::nextWave() {
 }
 
 void SignalGenerator::_applyWave() {
-    if (!_outOn) return;            // форма запомнена, применится при ON
+    if (!_outOn) return;            // waveform is remembered, applied on ON
     switch (_wave) {
         case WAVE_SINE:     _dds.setWave(AD9833_SINE);     break;
         case WAVE_TRIANGLE: _dds.setWave(AD9833_TRIANGLE); break;
@@ -213,8 +214,8 @@ String SignalGenerator::freqLabel() const {
     float f = _freq;
     if      (f >= 1000000.0f) return String(f / 1000000.0f, 4) + " MHz";
     else if (f >= 1000.0f)    return String(f / 1000.0f,    3) + " kHz";
-    // В диапазоне 0.1–999.9 Гц дробная часть значима (шаг 0.1 Гц):
-    // раньше 123.5 Гц отображалось как "123 Hz".
+    // Below 1 kHz the fractional part matters (step can be 0.1 Hz),
+    // so 123.5 Hz must not be shown as "123 Hz"
     float frac = f - (long)f;
     if (frac > 0.001f) return String(f, 1) + " Hz";
     return String((long)f) + " Hz";

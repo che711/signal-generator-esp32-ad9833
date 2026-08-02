@@ -22,7 +22,7 @@ restored on boot.
 | Web interface | Embedded single-page UI: set frequency/waveform/step, sweep control, curl cheatsheet, live system stats |
 | Sweep | Linear / logarithmic frequency sweep, 0.2 s – 1 h, phase-continuous |
 | Output enable | Mute button (web/API): DDS sleep, settings kept, state survives reboot |
-| mDNS | `http://dds-gen.local` (no need to know the IP) |
+| Addressing | IP address shown on the OLED at boot; optional mDNS alias `http://dds-gen.local` |
 | Persistence | Auto-save to NVS 5 s after the last change + manual save from web UI |
 | WiFi watchdog | Automatic reconnect if the connection drops |
 | Display | SSD1306 128×64 OLED (I2C) |
@@ -45,10 +45,19 @@ restored on boot.
 
 ### Web interface
 
-Open `http://dds-gen.local` (or the IP shown on the OLED at boot).
-The page lets you type an exact frequency, pick the waveform and step,
-nudge the frequency by the current step, save settings to memory, and
-shows live system stats (RSSI, CPU load, RAM, chip temperature, uptime).
+Open `http://<device-ip>` — the IP is shown on the OLED at boot and printed
+to the serial monitor. The page lets you type an exact frequency, pick the
+waveform and step, nudge the frequency by the current step, save settings to
+memory, and shows live system stats (RSSI, CPU load, RAM, chip temperature,
+uptime).
+
+> **mDNS (`http://dds-gen.local`) is a convenience, not a guarantee.** It
+> depends on both the client OS and the router: many consumer routers do not
+> forward mDNS between wired and wireless clients or across guest/VLAN
+> networks, and some block multicast entirely. Windows needs Bonjour or
+> Windows 10 1803+; Android support is patchy. If `.local` does not resolve,
+> use the IP address — it always works. For scripts and automation, prefer
+> the IP (or a DHCP reservation for it) over the hostname.
 
 HTTP API used by the page (usable from scripts too):
 
@@ -70,20 +79,25 @@ reflecting the state actually applied (values are clamped to valid ranges).
 <details>
 <summary><b>curl examples</b> — scripts, Robot Framework, lab automation</summary>
 
+Replace `192.168.1.45` with your device's IP (a DHCP reservation on the
+router keeps it stable). `dds-gen.local` also works where mDNS is available.
+
 ```bash
+DDS=192.168.1.45
+
 # Device state: frequency, waveform, sweep, RSSI, heap, uptime
-curl http://dds-gen.local/status
+curl http://$DDS/status
 
 # 10 kHz sine
-curl "http://dds-gen.local/set/freq?v=10000"
-curl "http://dds-gen.local/set/wave?v=sine"   # sine | tri | sqr | sqr2
+curl "http://$DDS/set/freq?v=10000"
+curl "http://$DDS/set/wave?v=sine"   # sine | tri | sqr | sqr2
 
 # Log sweep 10 Hz -> 100 kHz over 10 s (Bode plot on the scope)
-curl "http://dds-gen.local/sweep/start?f0=10&f1=100000&t=10&mode=log"
-curl http://dds-gen.local/sweep/stop
+curl "http://$DDS/sweep/start?f0=10&f1=100000&t=10&mode=log"
+curl http://$DDS/sweep/stop
 
 # Persist settings to NVS
-curl http://dds-gen.local/save
+curl http://$DDS/save
 ```
 
 Robot Framework setup example:
@@ -92,12 +106,16 @@ Robot Framework setup example:
 *** Settings ***
 Library    RequestsLibrary
 
+*** Variables ***
+${DDS_HOST}    http://192.168.1.45
+
 *** Keywords ***
 Set Reference Signal
-    [Arguments]    ${freq}    ${wave}=0
-    GET    http://dds-gen.local/set/freq    params=v=${freq}
-    GET    http://dds-gen.local/set/wave    params=v=${wave}
+    [Arguments]    ${freq}    ${wave}=sine
+    GET    ${DDS_HOST}/set/freq    params=v=${freq}
+    GET    ${DDS_HOST}/set/wave    params=v=${wave}
 ```
+
 </details>
 
 ---
@@ -151,8 +169,11 @@ Before flashing, edit [src/config.h](src/config.h):
 ```c
 #define WIFI_SSID      "YourNetwork"
 #define WIFI_PASSWORD  "YourPassword"
-#define MDNS_HOSTNAME  "dds-gen"      // → http://dds-gen.local
+#define MDNS_HOSTNAME  "dds-gen"      // optional alias → http://dds-gen.local
 ```
+
+`MDNS_HOSTNAME` only sets up the optional `.local` alias; the device is
+always reachable by IP regardless of whether mDNS resolves on your network.
 
 If WiFi is unavailable the generator still works standalone with the
 encoder and OLED.
@@ -237,7 +258,7 @@ signal-generator-esp32-ad9833/
 At 115200 baud the device prints events:
 
 ```
-[DDS] Booting v3...
+[DDS] Booting...
 [GEN] Settings loaded from NVS
 [GEN] freq=1000.00Hz wave=0 step=4
 [WiFi] Connecting to SkyNet....
