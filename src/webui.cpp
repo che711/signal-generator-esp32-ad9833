@@ -4,7 +4,7 @@ volatile uint32_t WebUI::_s_idle0 = 0;
 volatile uint32_t WebUI::_s_idle1 = 0;
 
 // ─────────────────────────────────────────────────────────
-// Embedded HTML — v5 (без изменений UI, только JS улучшен)
+// Embedded HTML — served from flash by _handleRoot()
 // ─────────────────────────────────────────────────────────
 const char WebUI::_HTML[] PROGMEM = R"rawhtml(
 <!DOCTYPE html><html lang="en"><head>
@@ -148,6 +148,12 @@ body{
 .card.folded .card-body{display:none}
 .card.folded .card-title{margin-bottom:0}
 .card.folded .chev{transform:rotate(-90deg)}
+.btn-reboot{
+  width:100%;margin-top:14px;padding:11px;border-radius:10px;
+  border:1px solid var(--border);background:transparent;color:var(--text3);
+  font-size:.88rem;font-weight:600;cursor:pointer;transition:all .15s;
+}
+.btn-reboot:hover{border-color:#a03030;color:#e05555}
 .btn-out{
   width:100%;padding:16px;border-radius:12px;border:2px solid var(--border);
   font-size:1.05rem;font-weight:800;letter-spacing:.08em;cursor:pointer;
@@ -355,7 +361,10 @@ details.api-details[open] summary::before{content:'\25BE  '}
 </div>
 
 <div class="card" style="padding:16px">
-  <button class="btn-save" style="margin-top:0" onclick="saveSettings()">&#128190;&ensp;Save to memory</button>
+  <div style="display:flex;gap:10px">
+    <button class="btn-save" style="margin-top:0;flex:1" onclick="saveSettings()">&#128190;&ensp;Save to memory</button>
+    <button class="btn-reboot" style="margin-top:0;width:auto;flex:1" onclick="rebootDev()">&#8635;&ensp;Reboot</button>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -367,7 +376,7 @@ const STEPS = [0.1,1,10,100,1000,10000,100000,1000000];
 function fmtSplit(hz){
   if(hz>=1e6) return [(hz/1e6).toFixed(4),'MHz'];
   if(hz>=1e3) return [(hz/1e3).toFixed(3),'kHz'];
-  // не терять дробную часть (шаг 0.1 Гц): 123.5 → "123.5", 123.0 → "123"
+  // keep the fraction (0.1 Hz step): 123.5 → "123.5", 123.0 → "123"
   return [(hz % 1 > 1e-3 ? hz.toFixed(1) : Math.round(hz).toString()),'Hz'];
 }
 
@@ -378,13 +387,13 @@ function toast(msg,type='ok'){
 }
 
 function applyStatus(d){
-  // Частота — берём реально установленное значение из ответа сервера
+  // Frequency — use the value the device actually applied
   const [v,u]=fmtSplit(d.freq);
   document.getElementById('fVal').textContent   = v;
   document.getElementById('fUnit').textContent  = ' '+u;
   document.getElementById('fRaw').textContent   = d.freq.toFixed(2)+' Hz';
-  // Не затирать поле ввода, пока пользователь в нём печатает —
-  // раньше poll() каждые 2 c сбрасывал недонабранное значение
+  // Do not overwrite the input while the user is typing in it:
+  // poll() runs every 2 s and would wipe a half-typed value
   const fin=document.getElementById('freqIn');
   if(document.activeElement!==fin) fin.value=d.freq;
 
@@ -455,7 +464,7 @@ async function setFreq(){
   const el=document.getElementById('freqIn');
   const v=parseFloat(el.value);
   if(isNaN(v)||v<0.1||v>12000000){toast('Valid: 0.1 Hz – 12 MHz','err');return;}
-  el.blur();                       // вернуть поле под управление poll()
+  el.blur();                       // hand the field back to poll()
   await fetch('/set/freq?v='+v); poll();
 }
 
@@ -547,12 +556,13 @@ function buildApiList(){
   const EX=[
     ['Device state (freq, wave, RSSI, heap, uptime)', `curl http://${h}/status`],
     ['Set frequency: 10 kHz',                          `curl "http://${h}/set/freq?v=10000"`],
-    ['Waveform: 0 sine, 1 tri, 2 square, 3 square/2',  `curl "http://${h}/set/wave?v=0"`],
-    ['Encoder step: 0 = 0.1 Hz ... 7 = 1 MHz',         `curl "http://${h}/set/step?v=4"`],
-    ['Log sweep 10 Hz to 100 kHz over 10 s',           `curl "http://${h}/sweep/start?f0=10&f1=100000&t=10&mode=log"`],
-    ['Stop sweep (freq stays where it was)',           `curl http://${h}/sweep/stop`],
+    ['Waveform: sine | tri | sqr | sqr2',              `curl "http://${h}/set/wave?v=sine"`],
+    ['Encoder step, Hz per click: 0.1 ... 1m',         `curl "http://${h}/set/step?v=1k"`],
+    ['Log sweep 10 Hz to 100 kHz over 10 s (returns to prior freq when done)', `curl "http://${h}/sweep/start?f0=10&f1=100000&t=10&mode=log"`],
+    ['Stop sweep mid-run (freq stays where it was)',   `curl http://${h}/sweep/stop`],
     ['Output enable: 1 on, 0 off (mute, keeps settings)', `curl "http://${h}/set/out?v=0"`],
     ['Persist current settings to NVS',                `curl http://${h}/save`],
+    ['Reboot the device (settings saved first)',       `curl http://${h}/reboot`],
   ];
   document.getElementById('apiList').innerHTML = EX.map(([d,c],i)=>`
     <div class="api-item">
@@ -570,12 +580,21 @@ async function copyCmd(i){
     await navigator.clipboard.writeText(txt);
     toast('Copied \u2713');
   }catch(e){
-    // clipboard API требует HTTPS/localhost — фоллбэк для http://
+    // the clipboard API needs HTTPS/localhost — fallback for plain http://
     const ta=document.createElement('textarea');
     ta.value=txt; document.body.appendChild(ta);
     ta.select(); document.execCommand('copy'); ta.remove();
     toast('Copied \u2713');
   }
+}
+
+// ── Reboot ──
+async function rebootDev(){
+  if(!confirm('Reboot the generator?')) return;
+  try{ await fetch('/reboot'); }catch(e){}
+  toast('Rebooting\u2026');
+  // the page recovers on its own: poll() runs every 2 s and starts getting
+  // /status again as soon as the device brings WiFi back up
 }
 
 // ── Collapsible cards (state in localStorage) ──
@@ -627,9 +646,6 @@ void WebUI::checkWiFi() {
         WiFi.disconnect();
         delay(100);
         _connectWiFi();
-        // БАГ был здесь: повторный _startServer() каждый реконнект заново
-        // регистрировал маршруты (WebServer::on() выделяет память под каждый
-        // handler → утечка) и вызывал MDNS.begin() поверх работающего.
         if (_connected) _startServer();
     }
 }
@@ -638,7 +654,7 @@ String WebUI::ipAddress() const {
     return _connected ? WiFi.localIP().toString() : "No WiFi";
 }
 
-// ── Мьютекс-хелпер ────────────────────────────────────────
+// ── Mutex helper ──────────────────────────────────────────
 bool WebUI::_withGen(std::function<void()> fn, TickType_t timeout) {
     if (xSemaphoreTake(_genMutex, timeout) == pdTRUE) {
         fn();
@@ -652,7 +668,24 @@ bool WebUI::_withGen(std::function<void()> fn, TickType_t timeout) {
 // ── WiFi ──────────────────────────────────────────────────
 void WebUI::_connectWiFi() {
     Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
+
+    // Log the disconnect reason — registered once.
+    // Codes: 200 BEACON_TIMEOUT / 201 NO_AP_FOUND — radio or power;
+    //        8 — the AP dropped the association itself; 2/15/202 — auth
+    static bool evtHooked = false;
+    if (!evtHooked) {
+        evtHooked = true;
+        WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info){
+            Serial.printf("[WiFi] disconnected, reason=%d\n",
+                          (int)info.wifi_sta_disconnected.reason);
+        }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+    }
+
+    WiFi.persistent(false);       // do not rewrite credentials to flash on every begin()
     WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);         // modem sleep OFF: the device is mains-powered,
+                                  // latency and missed beacons cost more than ~60 mA
+    WiFi.setAutoReconnect(true);  // the stack reconnects itself; the watchdog is backup
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     uint32_t start = millis();
     while (WiFi.status() != WL_CONNECTED &&
@@ -669,13 +702,14 @@ void WebUI::_connectWiFi() {
 }
 
 void WebUI::_startServer() {
-    // mDNS перезапускаем после реконнекта (иначе .local перестаёт отвечать)
+    // mDNS is restarted after a reconnect, otherwise .local stops answering
     if (_mdnsStarted) MDNS.end();
     _mdnsStarted = MDNS.begin(MDNS_HOSTNAME);
     if (_mdnsStarted)
         Serial.printf("[mDNS] http://%s.local\n", MDNS_HOSTNAME);
 
-    // Маршруты и сам сервер запускаем ровно один раз
+    // Routes and the server itself are set up exactly once: WebServer::on()
+    // allocates per handler, so re-registering on every reconnect would leak
     if (!_serverStarted) {
         _registerRoutes();
         _server.begin();
@@ -692,6 +726,7 @@ void WebUI::_registerRoutes() {
     _server.on("/set/step", [this](){ _handleSetStep(); });
     _server.on("/save",        [this](){ _handleSave();       });
     _server.on("/set/out",     [this](){ _handleSetOut();     });
+    _server.on("/reboot",      [this](){ _handleReboot();     });
     _server.on("/sweep/start", [this](){ _handleSweepStart(); });
     _server.on("/sweep/stop",  [this](){ _handleSweepStop();  });
     _server.onNotFound([this](){ _server.send(404, "text/plain", "not found"); });
@@ -701,8 +736,8 @@ void WebUI::_handleRoot() {
     _server.send_P(200, "text/html", _HTML);
 }
 
-// ── Общий JSON-ответ с текущим состоянием ─────────────────
-// Используется всеми set-хендлерами и /status
+// ── Shared JSON response with the current state ───────────
+// Used by /status and by every set handler
 void WebUI::_handleStatus() {
     uint32_t freeHeap  = ESP.getFreeHeap();
     uint32_t totalHeap = ESP.getHeapSize();
@@ -768,19 +803,30 @@ void WebUI::_handleSetFreq() {
     }
     float requested = _server.arg("v").toFloat();
     float applied = 0;
-    // applied читаем внутри мьютекса: раньше _gen.getFrequency() дёргался
-    // уже после _withGen — гонка с UI-задачей на ядре 1
+    // Read the applied value inside the mutex — reading it after _withGen
+    // would race with the UI task on core 1
     _withGen([&](){ applied = _gen.setFrequency(requested); });
     _changedFlag = true;
     Serial.printf("[Web] freq → %.2f Hz (requested %.2f)\n",
                   applied, requested);
-    _handleStatus();   // вернуть реально установленное состояние
+    _handleStatus();   // reply with the state that was actually applied
 }
 
 void WebUI::_handleSetWave() {
-    int idx = _server.arg("v").toInt();
-    if (!_server.hasArg("v") || idx < 0 || idx >= WAVE_COUNT) {
-        _server.send(400, "text/plain", "wave index out of range");
+    if (!_server.hasArg("v")) {
+        _server.send(400, "text/plain", "usage: /set/wave?v=sine|tri|sqr|sqr2");
+        return;
+    }
+    String v = _server.arg("v");
+    v.toLowerCase();
+    int idx = -1;
+    if      (v == "sine" || v == "sin")                       idx = WAVE_SINE;
+    else if (v == "tri"  || v == "triangle")                  idx = WAVE_TRIANGLE;
+    else if (v == "sqr"  || v == "square")                    idx = WAVE_SQUARE;
+    else if (v == "sqr2" || v == "square2" || v == "sqr/2")   idx = WAVE_SQUARE2;
+    else if (v.length() && isDigit(v[0]))                     idx = v.toInt();  // legacy 0-3
+    if (idx < 0 || idx >= WAVE_COUNT) {
+        _server.send(400, "text/plain", "bad wave: sine|tri|sqr|sqr2 (or 0-3)");
         return;
     }
     const char* lbl = "";
@@ -791,9 +837,24 @@ void WebUI::_handleSetWave() {
 }
 
 void WebUI::_handleSetStep() {
-    int idx = _server.arg("v").toInt();
-    if (!_server.hasArg("v") || idx < 0 || idx >= STEP_COUNT) {
-        _server.send(400, "text/plain", "step index out of range");
+    if (!_server.hasArg("v")) {
+        _server.send(400, "text/plain",
+            "usage: /set/step?v=0.1|1|10|100|1k|10k|100k|1m (Hz per encoder click)");
+        return;
+    }
+    String v = _server.arg("v");
+    v.toLowerCase();
+    // Encoder step: how many Hz the frequency moves per detent
+    static const char* names[STEP_COUNT] =
+        {"0.1", "1", "10", "100", "1k", "10k", "100k", "1m"};
+    int idx = -1;
+    for (int i = 0; i < STEP_COUNT; i++)
+        if (v == names[i]) { idx = i; break; }
+    if (idx < 0 && v.length() && isDigit(v[0]) && v.length() == 1)
+        idx = v.toInt();                                      // legacy 0-7
+    if (idx < 0 || idx >= STEP_COUNT) {
+        _server.send(400, "text/plain",
+            "bad step: 0.1|1|10|100|1k|10k|100k|1m (or 0-7)");
         return;
     }
     const char* lbl = "";
@@ -806,6 +867,17 @@ void WebUI::_handleSetStep() {
 void WebUI::_handleSave() {
     _withGen([&](){ _gen.saveSettings(); });
     _server.send(200, "text/plain", "ok");
+}
+
+void WebUI::_handleReboot() {
+    // Save first: autosave is debounced by 5 s, so a reboot right after a
+    // frequency change would otherwise lose it
+    _withGen([&](){ _gen.saveSettings(); });
+    _server.send(200, "text/plain", "rebooting");
+    _server.client().stop();     // flush the response before restarting
+    Serial.println("[Web] reboot requested");
+    delay(200);
+    ESP.restart();
 }
 
 void WebUI::_handleSetOut() {
@@ -878,13 +950,11 @@ void WebUI::updateCpuLoad() {
     _cpuIdle1Prev = i1;
     _cpuSampleMs  = now;
 
-    // БАГ был здесь: baseline брался из первого интервала, который включал
-    // блокирующее подключение WiFi (до 8 с) — калибровка получалась
-    // случайной, и проценты дальше врали. Теперь:
-    //  1) нормируем по фактически прошедшему времени (тиков/мс);
-    //  2) первый интервал пропускаем;
-    //  3) baseline самокорректируется вверх, если система оказалась
-    //     ещё более "пустой", чем при калибровке.
+    // Idle-tick rate normalised by the time actually elapsed (ticks/ms).
+    // The first interval is skipped because it contains the blocking WiFi
+    // connect (up to 8 s) and would poison the baseline. The baseline then
+    // self-corrects upward whenever the system turns out to be even more
+    // idle than it was at calibration time.
     float rate = (float)idleTotal / (float)elapsed;
 
     if (_cpuFirstSample) {

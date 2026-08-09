@@ -12,21 +12,21 @@
 
 class WebUI {
 public:
-    // genMutex — мьютекс на доступ к SignalGenerator, разделяется с main
+    // genMutex — guards access to SignalGenerator, shared with main
     WebUI(SignalGenerator& gen, SemaphoreHandle_t genMutex);
 
     void begin();
-    void handle();              // вызывать из web-задачи
+    void handle();              // call from the web task
     void checkWiFi();           // WiFi watchdog
     void updateCpuLoad();       // CPU sampling
 
     bool   isConnected() const { return _connected; }
     String ipAddress()   const;
 
-    // true один раз после изменения настроек через веб (для перерисовки
-    // OLED и запуска таймера автосохранения в main loop)
-    // atomic: флаг пишется web-задачей (ядро 0), читается loop() (ядро 1).
-    // exchange() атомарно читает и сбрасывает — событие не потеряется
+    // Returns true once after settings changed via the web UI, so the main
+    // loop can redraw the OLED and restart the autosave timer.
+    // Atomic: written by the web task (core 0), read by loop() (core 1);
+    // exchange() reads and clears in one step so no event is lost
     bool consumeChanged() {
         return _changedFlag.exchange(false);
     }
@@ -36,7 +36,7 @@ private:
     SemaphoreHandle_t _genMutex;
     WebServer         _server;
     bool             _connected;
-    bool             _serverStarted;   // маршруты регистрируем ровно один раз
+    bool             _serverStarted;   // routes are registered exactly once
     bool             _mdnsStarted;
     std::atomic<bool> _changedFlag;
     uint32_t         _lastWifiCheckMs;
@@ -47,8 +47,8 @@ private:
     uint32_t _cpuSampleMs;
     uint32_t _cpuIdle0Prev;
     uint32_t _cpuIdle1Prev;
-    float    _cpuIdleRateMax;  // baseline: idle-тиков/мс при ~0% загрузки
-    bool     _cpuFirstSample;  // первый интервал искажён — пропускаем
+    float    _cpuIdleRateMax;  // baseline: idle ticks/ms at ~0 % load
+    bool     _cpuFirstSample;  // the first interval is skewed — skip it
     int      _cpuLoad;         // 0-100 %
 
     static bool IRAM_ATTR _idleHook0();
@@ -67,11 +67,12 @@ private:
     void _handleSetStep();
     void _handleSave();
     void _handleSetOut();
+    void _handleReboot();
     void _handleSweepStart();
     void _handleSweepStop();
 
-    // Хелпер: захватить мьютекс, выполнить действие, отпустить
-    // Возвращает false если мьютекс не получен за timeout
+    // Helper: take the mutex, run the action, release it.
+    // Returns false if the mutex was not acquired within timeout
     bool _withGen(std::function<void()> fn, TickType_t timeout = pdMS_TO_TICKS(50));
 
     static const char _HTML[];
