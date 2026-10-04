@@ -85,7 +85,7 @@ AD9833 GND ─────────── BNC shell
 ## ESP32 Super Mini Pin Mapping
 
 If using **ESP32 Super Mini** (C3), note it has **no hardware DAC**.
-The AD9833 SPI still works — update pin numbers in `generator.h`:
+The AD9833 SPI still works — update pin numbers in `src/config.h`:
 
 | Function | DevKit | Super Mini |
 |----------|--------|-----------|
