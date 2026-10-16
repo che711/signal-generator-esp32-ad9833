@@ -10,21 +10,19 @@ public:
     Display();
     void begin();
 
-    // Главный экран
     void drawMain(
         const String& freqStr,
         const char*   waveLabel,
         const char*   stepLabel,
-        bool          wifiOn = false
+        bool          wifiOn = false,
+        const String& ssid   = "",
+        const String& ip     = ""
     );
 
-    // Показать IP после подключения к WiFi
     void drawIP(const String& ip);
-
-    // Заставка при старте
     void drawSplash();
 
-    // Статус WiFi без перерисовки частоты (не используется в loop)
+    // WiFi status screen, does not redraw the frequency
     void drawConnecting(const String& ssid);
 
 private:

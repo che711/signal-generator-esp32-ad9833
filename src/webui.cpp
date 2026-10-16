@@ -1,7 +1,10 @@
 #include "webui.h"
 
+volatile uint32_t WebUI::_s_idle0 = 0;
+volatile uint32_t WebUI::_s_idle1 = 0;
+
 // ─────────────────────────────────────────────────────────
-// Embedded HTML — v4 UI (25% larger, better readability)
+// Embedded HTML — served from flash by _handleRoot()
 // ─────────────────────────────────────────────────────────
 const char WebUI::_HTML[] PROGMEM = R"rawhtml(
 <!DOCTYPE html><html lang="en"><head>
@@ -128,7 +131,6 @@ body{
 .toast.ok{background:var(--green-bg);color:var(--green);border:1px solid var(--green)}
 .toast.err{background:#2e0a0a;color:#f87171;border:1px solid #f87171}
 .toast.show{opacity:1}
-
 .sys-divider{height:1px;background:var(--border);margin:12px 0}
 .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
 .bar-label{font-size:.82rem;color:var(--text2);width:68px;flex-shrink:0}
@@ -139,6 +141,72 @@ body{
 .bar-free{background:var(--green)}
 .bar-pct{font-size:.82rem;font-weight:700;color:var(--text2);width:38px;text-align:right;flex-shrink:0}
 .bar-val{font-size:.82rem;font-weight:700;color:var(--green);width:60px;text-align:right;flex-shrink:0}
+.card-title.tgl{cursor:pointer;user-select:none}
+.card-title.tgl .chev{
+  color:var(--purple);font-size:.9rem;transition:transform .2s;margin-left:2px
+}
+.card.folded .card-body{display:none}
+.card.folded .card-title{margin-bottom:0}
+.card.folded .chev{transform:rotate(-90deg)}
+.btn-reboot{
+  width:100%;margin-top:14px;padding:11px;border-radius:10px;
+  border:1px solid var(--border);background:transparent;color:var(--text3);
+  font-size:.88rem;font-weight:600;cursor:pointer;transition:all .15s;
+}
+.btn-reboot:hover{border-color:#a03030;color:#e05555}
+.btn-out{
+  width:100%;padding:16px;border-radius:12px;border:2px solid var(--border);
+  font-size:1.05rem;font-weight:800;letter-spacing:.08em;cursor:pointer;
+  transition:all .15s;background:var(--surface2);color:var(--text3);
+}
+.btn-out.on{border-color:var(--green);background:var(--green-bg);color:var(--green);
+  box-shadow:0 0 14px rgba(45,212,160,.25)}
+.btn-out:hover{transform:translateY(-1px)}
+.sw-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px}
+.sw-grid input{
+  width:100%;padding:12px 10px;border-radius:10px;
+  border:2px solid var(--border);background:var(--bg);
+  color:var(--text);font-size:.95rem;text-align:center;outline:none;
+}
+.sw-grid input:focus{border-color:var(--purple)}
+.sw-lbl{font-size:.72rem;color:var(--text3);margin-bottom:4px;text-align:center}
+.mode-row{display:flex;gap:10px;margin-bottom:12px}
+.mbtn{
+  flex:1;padding:11px;border-radius:10px;border:2px solid var(--border);
+  background:transparent;color:var(--text2);font-size:.9rem;font-weight:600;
+  cursor:pointer;transition:all .15s;
+}
+.mbtn.active{border-color:var(--green);background:var(--green-bg);color:var(--green)}
+.btn-sweep{
+  width:100%;padding:14px;border-radius:12px;border:none;
+  background:var(--purple-d);color:#fff;font-size:1rem;font-weight:700;
+  cursor:pointer;transition:all .15s;
+}
+.btn-sweep:hover{background:var(--purple)}
+.btn-sweep.stop{background:#7a2626}
+.btn-sweep.stop:hover{background:#a03030}
+.api-item{
+  display:flex;align-items:center;gap:8px;
+  padding:9px 0;border-bottom:1px solid var(--border);
+}
+.api-item:last-child{border:none}
+.api-cmd{
+  flex:1;font-family:ui-monospace,monospace;font-size:.76rem;
+  color:var(--text2);overflow-x:auto;white-space:nowrap;
+}
+.api-desc{font-size:.72rem;color:var(--text3);margin-top:2px}
+.btn-copy{
+  padding:7px 12px;border-radius:8px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--text2);font-size:.78rem;
+  font-weight:600;cursor:pointer;flex-shrink:0;transition:all .15s;
+}
+.btn-copy:hover{border-color:var(--purple);color:var(--purple)}
+details.api-details summary{
+  cursor:pointer;color:var(--text3);font-size:.85rem;
+  list-style:none;user-select:none;
+}
+details.api-details summary::before{content:'\25B8  ';color:var(--purple)}
+details.api-details[open] summary::before{content:'\25BE  '}
 </style>
 </head>
 <body>
@@ -146,6 +214,11 @@ body{
 <div class="header">
   <h1>&#9646; DDS GENERATOR</h1>
   <div><span class="badge"><span class="dot"></span>ESP32 + AD9833 &middot; Online</span></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Output</div>
+  <button class="btn-out on" id="outBtn" onclick="toggleOut()">OUTPUT ON</button>
 </div>
 
 <div class="card">
@@ -158,7 +231,7 @@ body{
   </div>
   <div class="input-row">
     <input class="freq-input" type="number" id="freqIn"
-           placeholder="Enter Hz" min="0.1" max="12000000">
+           placeholder="Enter Hz" min="0.1" max="12000000" step="any">
     <button class="btn btn-purple" onclick="setFreq()">Set</button>
   </div>
   <div class="step-row">
@@ -198,7 +271,8 @@ body{
 </div>
 
 <div class="card">
-  <div class="card-title">Frequency Step</div>
+  <div class="card-title tgl" data-k="step" onclick="tglCard(this)">Frequency Step<span class="chev">&#9662;</span></div>
+  <div class="card-body">
   <div class="step-grid">
     <button class="sbtn" id="s0" onclick="setStep(0)">0.1 Hz</button>
     <button class="sbtn" id="s1" onclick="setStep(1)">1 Hz</button>
@@ -209,10 +283,44 @@ body{
     <button class="sbtn" id="s6" onclick="setStep(6)">100 kHz</button>
     <button class="sbtn" id="s7" onclick="setStep(7)">1 MHz</button>
   </div>
+  </div>
 </div>
 
 <div class="card">
-  <div class="card-title">System</div>
+  <div class="card-title tgl" data-k="sweep" onclick="tglCard(this)">Sweep<span class="chev">&#9662;</span></div>
+  <div class="card-body">
+  <div class="sw-grid">
+    <div><div class="sw-lbl">From, Hz</div>
+      <input type="number" id="swF0" value="100" min="0.1" max="12000000" step="any"></div>
+    <div><div class="sw-lbl">To, Hz</div>
+      <input type="number" id="swF1" value="100000" min="0.1" max="12000000" step="any"></div>
+    <div><div class="sw-lbl">Time, s</div>
+      <input type="number" id="swT" value="10" min="0.2" max="3600" step="any"></div>
+  </div>
+  <div class="mode-row">
+    <button class="mbtn active" id="mLin" onclick="setSwMode('lin')">Linear</button>
+    <button class="mbtn" id="mLog" onclick="setSwMode('log')">Logarithmic</button>
+  </div>
+  <div class="bar-row" id="swProgRow" style="display:none">
+    <div class="bar-label">Progress</div>
+    <div class="bar-track"><div class="bar-fill bar-cpu" id="bSw"></div></div>
+    <div class="bar-pct" id="pSw">0%</div>
+  </div>
+  <button class="btn-sweep" id="swBtn" onclick="toggleSweep()">&#9654;&ensp;Start sweep</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">HTTP API</div>
+  <details class="api-details" open>
+    <summary>curl examples &mdash; scripts, CI, lab automation</summary>
+    <div id="apiList" style="margin-top:10px"></div>
+  </details>
+</div>
+
+<div class="card">
+  <div class="card-title tgl" data-k="system" onclick="tglCard(this)">System<span class="chev">&#9662;</span></div>
+  <div class="card-body">
   <div class="stat-row">
     <span class="stat-label">WiFi</span>
     <span class="stat-val" id="sySsid" style="color:var(--green)">—</span>
@@ -249,24 +357,15 @@ body{
     <span class="stat-label">Uptime</span>
     <span class="stat-val" id="syUp" style="color:var(--text2)">—</span>
   </div>
-</div>
-<div class="card">
-  <div class="card-title">Status</div>
-  <div class="stat-row">
-    <span class="stat-label">Frequency</span>
-    <span class="stat-val" id="stFreq">—</span>
   </div>
-  <div class="stat-row">
-    <span class="stat-label">Waveform</span>
-    <span class="stat-val" id="stWave">—</span>
-  </div>
-  <div class="stat-row">
-    <span class="stat-label">Step</span>
-    <span class="stat-val" id="stStep" style="color:var(--green)">—</span>
-  </div>
-  <button class="btn-save" onclick="saveSettings()">&#128190;&ensp;Save to memory</button>
 </div>
 
+<div class="card" style="padding:16px">
+  <div style="display:flex;gap:10px">
+    <button class="btn-save" style="margin-top:0;flex:1" onclick="saveSettings()">&#128190;&ensp;Save to memory</button>
+    <button class="btn-reboot" style="margin-top:0;width:auto;flex:1" onclick="rebootDev()">&#8635;&ensp;Reboot</button>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -277,8 +376,8 @@ const STEPS = [0.1,1,10,100,1000,10000,100000,1000000];
 function fmtSplit(hz){
   if(hz>=1e6) return [(hz/1e6).toFixed(4),'MHz'];
   if(hz>=1e3) return [(hz/1e3).toFixed(3),'kHz'];
-  if(hz<1)    return [hz.toFixed(1),'Hz'];
-  return [Math.round(hz).toString(),'Hz'];
+  // keep the fraction (0.1 Hz step): 123.5 → "123.5", 123.0 → "123"
+  return [(hz % 1 > 1e-3 ? hz.toFixed(1) : Math.round(hz).toString()),'Hz'];
 }
 
 function toast(msg,type='ok'){
@@ -288,14 +387,15 @@ function toast(msg,type='ok'){
 }
 
 function applyStatus(d){
+  // Frequency — use the value the device actually applied
   const [v,u]=fmtSplit(d.freq);
   document.getElementById('fVal').textContent   = v;
   document.getElementById('fUnit').textContent  = ' '+u;
   document.getElementById('fRaw').textContent   = d.freq.toFixed(2)+' Hz';
-  document.getElementById('freqIn').value       = d.freq;
-  document.getElementById('stFreq').textContent = v+' '+u;
-  document.getElementById('stWave').textContent = d.wave;
-  document.getElementById('stStep').textContent = d.step;
+  // Do not overwrite the input while the user is typing in it:
+  // poll() runs every 2 s and would wipe a half-typed value
+  const fin=document.getElementById('freqIn');
+  if(document.activeElement!==fin) fin.value=d.freq;
 
   for(let i=0;i<4;i++)
     document.getElementById('w'+i).classList.toggle('active',i===d.waveIdx);
@@ -307,8 +407,9 @@ function applyStatus(d){
     btn.querySelectorAll('path,polyline').forEach(el=>el.setAttribute('stroke',c));
   });
   curStep=d.stepIdx;
+  applySweep(d.sweep);
+  applyOut(d.out!==false);
 
-  // System card
   if(d.sys){
     const s=d.sys;
     document.getElementById('sySsid').textContent = s.ssid||'—';
@@ -325,55 +426,192 @@ function applyStatus(d){
     document.getElementById('bCpu').style.background =
       s.cpu>80?'#e24b4a':s.cpu>50?'#f5a623':'var(--purple)';
 
-    const ramPct = Math.round((s.totalHeap - s.freeHeap) / s.totalHeap * 100);
+    const ramPct = Math.round((s.totalHeap-s.freeHeap)/s.totalHeap*100);
     document.getElementById('bRam').style.width = ramPct+'%';
     document.getElementById('pRam').textContent = ramPct+'%';
-    document.getElementById('bRam').style.background =
-      ramPct>80?'#e24b4a':ramPct>60?'#f5a623':'#f5a623';
 
-    const freePct = Math.round(s.freeHeap / s.totalHeap * 100);
+    const freePct = Math.round(s.freeHeap/s.totalHeap*100);
     document.getElementById('bFree').style.width = freePct+'%';
     document.getElementById('pFree').textContent = Math.round(s.freeHeap/1024)+'kB';
 
-    const t = s.temp.toFixed(1);
-    document.getElementById('syTemp').textContent = t+' °C';
+    document.getElementById('syTemp').textContent = s.temp.toFixed(1)+' °C';
     document.getElementById('syTemp').style.color =
-      s.temp>70?'#e24b4a':s.temp>55?'#f5a623':'#f5a623';
+      s.temp>70?'#e24b4a':'#f5a623';
 
-    const u = s.uptime;
-    const h=Math.floor(u/3600), m=Math.floor((u%3600)/60), sec=u%60;
+    const u=s.uptime;
+    const h=Math.floor(u/3600),m=Math.floor((u%3600)/60),sec=u%60;
     document.getElementById('syUp').textContent =
       (h?h+'h ':'')+m+'m '+sec+'s';
   }
 }
 
 async function poll(){
-  try{ const r=await fetch('/status'); if(r.ok) applyStatus(await r.json()); }
-  catch(e){}
+  try{
+    const r=await fetch('/status');
+    if(r.ok) applyStatus(await r.json());
+  }catch(e){}
+}
+
+async function api(url){
+  try{
+    const r=await fetch(url);
+    if(!r.ok){ toast('Error '+r.status,'err'); return null; }
+    return await r.json();
+  }catch(e){ toast('No connection','err'); return null; }
 }
 
 async function setFreq(){
-  const v=parseFloat(document.getElementById('freqIn').value);
+  const el=document.getElementById('freqIn');
+  const v=parseFloat(el.value);
   if(isNaN(v)||v<0.1||v>12000000){toast('Valid: 0.1 Hz – 12 MHz','err');return;}
+  el.blur();                       // hand the field back to poll()
   await fetch('/set/freq?v='+v); poll();
 }
 
-async function setWave(i){ await fetch('/set/wave?v='+i); poll(); }
-async function setStep(i){ await fetch('/set/step?v='+i); poll(); }
+async function setWave(i){
+  const d=await api('/set/wave?v='+i);
+  if(d) applyStatus(d);
+}
+
+async function setStep(i){
+  const d=await api('/set/step?v='+i);
+  if(d) applyStatus(d);
+}
 
 async function nudge(dir){
   const cur=parseFloat(document.getElementById('freqIn').value)||1000;
   const nv=Math.max(0.1,Math.min(12000000,cur+dir*STEPS[curStep]));
-  await fetch('/set/freq?v='+nv); poll();
+  const d=await api('/set/freq?v='+nv);
+  if(d) applyStatus(d);
 }
 
 async function saveSettings(){
-  await fetch('/save'); toast('Saved to memory \u2713');
+  const r=await fetch('/save');
+  if(r.ok) toast('Saved to memory \u2713');
+  else toast('Save failed','err');
 }
 
 document.getElementById('freqIn')
   .addEventListener('keydown',e=>{ if(e.key==='Enter') setFreq(); });
 
+// ── Output toggle ──
+let outOn=true;
+async function toggleOut(){
+  const d=await api('/set/out?v='+(outOn?0:1));
+  if(d){ applyStatus(d); toast(d.out?'Output ON':'Output OFF'); }
+}
+function applyOut(on){
+  outOn=on;
+  const b=document.getElementById('outBtn');
+  b.textContent=on?'OUTPUT ON':'OUTPUT OFF';
+  b.classList.toggle('on',on);
+  document.querySelector('.freq-value').style.opacity=on?'1':'.35';
+}
+
+// ── Sweep UI ──
+let swMode='lin', swActive=false;
+
+function setSwMode(m){
+  swMode=m;
+  document.getElementById('mLin').classList.toggle('active',m==='lin');
+  document.getElementById('mLog').classList.toggle('active',m==='log');
+}
+
+async function toggleSweep(){
+  if(swActive){
+    const d=await api('/sweep/stop');
+    if(d) applyStatus(d);
+    return;
+  }
+  const f0=parseFloat(document.getElementById('swF0').value);
+  const f1=parseFloat(document.getElementById('swF1').value);
+  const t =parseFloat(document.getElementById('swT').value);
+  if([f0,f1,t].some(isNaN)){toast('Fill all sweep fields','err');return;}
+  const d=await api(`/sweep/start?f0=${f0}&f1=${f1}&t=${t}&mode=${swMode}`);
+  if(d){ applyStatus(d); toast('Sweep started'); }
+}
+
+function applySweep(sw){
+  if(!sw) return;
+  swActive=sw.active;
+  const btn=document.getElementById('swBtn');
+  const row=document.getElementById('swProgRow');
+  if(sw.active){
+    btn.closest('.card').classList.remove('folded');
+    btn.innerHTML='&#9632;&ensp;Stop sweep';
+    btn.classList.add('stop');
+    row.style.display='flex';
+    document.getElementById('bSw').style.width=sw.progress+'%';
+    document.getElementById('pSw').textContent=sw.progress+'%';
+  }else{
+    btn.innerHTML='&#9654;&ensp;Start sweep';
+    btn.classList.remove('stop');
+    row.style.display='none';
+  }
+}
+
+// ── API examples with copy buttons ──
+function buildApiList(){
+  const h=location.host||'dds-gen.local';
+  const EX=[
+    ['Device state (freq, wave, RSSI, heap, uptime)', `curl http://${h}/status`],
+    ['Set frequency: 10 kHz',                          `curl "http://${h}/set/freq?v=10000"`],
+    ['Waveform: sine | tri | sqr | sqr2',              `curl "http://${h}/set/wave?v=sine"`],
+    ['Encoder step, Hz per click: 0.1 ... 1m',         `curl "http://${h}/set/step?v=1k"`],
+    ['Log sweep 10 Hz to 100 kHz over 10 s (returns to prior freq when done)', `curl "http://${h}/sweep/start?f0=10&f1=100000&t=10&mode=log"`],
+    ['Stop sweep mid-run (freq stays where it was)',   `curl http://${h}/sweep/stop`],
+    ['Output enable: 1 on, 0 off (mute, keeps settings)', `curl "http://${h}/set/out?v=0"`],
+    ['Persist current settings to NVS',                `curl http://${h}/save`],
+    ['Reboot the device (settings saved first)',       `curl http://${h}/reboot`],
+  ];
+  document.getElementById('apiList').innerHTML = EX.map(([d,c],i)=>`
+    <div class="api-item">
+      <div style="flex:1;min-width:0">
+        <div class="api-cmd" id="cmd${i}">${c.replace(/&/g,'&amp;')}</div>
+        <div class="api-desc">${d}</div>
+      </div>
+      <button class="btn-copy" onclick="copyCmd(${i})">Copy</button>
+    </div>`).join('');
+}
+
+async function copyCmd(i){
+  const txt=document.getElementById('cmd'+i).textContent;
+  try{
+    await navigator.clipboard.writeText(txt);
+    toast('Copied \u2713');
+  }catch(e){
+    // the clipboard API needs HTTPS/localhost — fallback for plain http://
+    const ta=document.createElement('textarea');
+    ta.value=txt; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); ta.remove();
+    toast('Copied \u2713');
+  }
+}
+
+// ── Reboot ──
+async function rebootDev(){
+  if(!confirm('Reboot the generator?')) return;
+  try{ await fetch('/reboot'); }catch(e){}
+  toast('Rebooting\u2026');
+  // the page recovers on its own: poll() runs every 2 s and starts getting
+  // /status again as soon as the device brings WiFi back up
+}
+
+// ── Collapsible cards (state in localStorage) ──
+function tglCard(el){
+  const card=el.parentElement;
+  card.classList.toggle('folded');
+  try{localStorage.setItem('fold_'+el.dataset.k,
+      card.classList.contains('folded')?'1':'0');}catch(e){}
+}
+document.querySelectorAll('.card-title.tgl').forEach(el=>{
+  try{
+    if(localStorage.getItem('fold_'+el.dataset.k)==='1')
+      el.parentElement.classList.add('folded');
+  }catch(e){}
+});
+
+buildApiList();
 poll();
 setInterval(poll,2000);
 </script>
@@ -382,8 +620,10 @@ setInterval(poll,2000);
 
 // ─────────────────────────────────────────────────────────
 
-WebUI::WebUI(SignalGenerator& gen)
-    : _gen(gen), _server(WEB_PORT), _connected(false), _lastWifiCheckMs(0)
+WebUI::WebUI(SignalGenerator& gen, SemaphoreHandle_t genMutex)
+    : _gen(gen), _genMutex(genMutex), _server(WEB_PORT), _connected(false),
+      _serverStarted(false), _mdnsStarted(false), _changedFlag(false),
+      _lastWifiCheckMs(0)
 {}
 
 void WebUI::begin() {
@@ -404,7 +644,7 @@ void WebUI::checkWiFi() {
         Serial.println("[WiFi] Lost, reconnecting...");
         _connected = false;
         WiFi.disconnect();
-        delay(500);
+        delay(100);
         _connectWiFi();
         if (_connected) _startServer();
     }
@@ -414,9 +654,38 @@ String WebUI::ipAddress() const {
     return _connected ? WiFi.localIP().toString() : "No WiFi";
 }
 
+// ── Mutex helper ──────────────────────────────────────────
+bool WebUI::_withGen(std::function<void()> fn, TickType_t timeout) {
+    if (xSemaphoreTake(_genMutex, timeout) == pdTRUE) {
+        fn();
+        xSemaphoreGive(_genMutex);
+        return true;
+    }
+    Serial.println("[Web] mutex timeout!");
+    return false;
+}
+
+// ── WiFi ──────────────────────────────────────────────────
 void WebUI::_connectWiFi() {
     Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
+
+    // Log the disconnect reason — registered once.
+    // Codes: 200 BEACON_TIMEOUT / 201 NO_AP_FOUND — radio or power;
+    //        8 — the AP dropped the association itself; 2/15/202 — auth
+    static bool evtHooked = false;
+    if (!evtHooked) {
+        evtHooked = true;
+        WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info){
+            Serial.printf("[WiFi] disconnected, reason=%d\n",
+                          (int)info.wifi_sta_disconnected.reason);
+        }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+    }
+
+    WiFi.persistent(false);       // do not rewrite credentials to flash on every begin()
     WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);         // modem sleep OFF: the device is mains-powered,
+                                  // latency and missed beacons cost more than ~60 mA
+    WiFi.setAutoReconnect(true);  // the stack reconnects itself; the watchdog is backup
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     uint32_t start = millis();
     while (WiFi.status() != WL_CONNECTED &&
@@ -433,10 +702,19 @@ void WebUI::_connectWiFi() {
 }
 
 void WebUI::_startServer() {
-    if (MDNS.begin(MDNS_HOSTNAME))
+    // mDNS is restarted after a reconnect, otherwise .local stops answering
+    if (_mdnsStarted) MDNS.end();
+    _mdnsStarted = MDNS.begin(MDNS_HOSTNAME);
+    if (_mdnsStarted)
         Serial.printf("[mDNS] http://%s.local\n", MDNS_HOSTNAME);
-    _registerRoutes();
-    _server.begin();
+
+    // Routes and the server itself are set up exactly once: WebServer::on()
+    // allocates per handler, so re-registering on every reconnect would leak
+    if (!_serverStarted) {
+        _registerRoutes();
+        _server.begin();
+        _serverStarted = true;
+    }
     Serial.printf("[Web] http://%s\n", WiFi.localIP().toString().c_str());
 }
 
@@ -446,11 +724,20 @@ void WebUI::_registerRoutes() {
     _server.on("/set/freq", [this](){ _handleSetFreq(); });
     _server.on("/set/wave", [this](){ _handleSetWave(); });
     _server.on("/set/step", [this](){ _handleSetStep(); });
-    _server.on("/save",     [this](){ _handleSave();    });
+    _server.on("/save",        [this](){ _handleSave();       });
+    _server.on("/set/out",     [this](){ _handleSetOut();     });
+    _server.on("/reboot",      [this](){ _handleReboot();     });
+    _server.on("/sweep/start", [this](){ _handleSweepStart(); });
+    _server.on("/sweep/stop",  [this](){ _handleSweepStop();  });
+    _server.onNotFound([this](){ _server.send(404, "text/plain", "not found"); });
 }
 
-void WebUI::_handleRoot()   { _server.send_P(200, "text/html", _HTML); }
+void WebUI::_handleRoot() {
+    _server.send_P(200, "text/html", _HTML);
+}
 
+// ── Shared JSON response with the current state ───────────
+// Used by /status and by every set handler
 void WebUI::_handleStatus() {
     uint32_t freeHeap  = ESP.getFreeHeap();
     uint32_t totalHeap = ESP.getHeapSize();
@@ -458,21 +745,51 @@ void WebUI::_handleStatus() {
     int32_t  rssi      = WiFi.RSSI();
     uint32_t uptime    = millis() / 1000;
 
+    float freq = 0; int waveIdx = 0; int stepIdx = 0;
+    const char* waveLbl = ""; const char* stepLbl = "";
+    bool outOn = true;
+    bool swAct = false, swLog = false;
+    float swF0 = 0, swF1 = 0; uint32_t swT = 0; int swPct = 0;
+
+    _withGen([&](){
+        freq    = _gen.getFrequency();
+        waveIdx = (int)_gen.getWave();
+        stepIdx = (int)_gen.getStep();
+        waveLbl = _gen.waveLabel();
+        stepLbl = _gen.stepLabel();
+        outOn   = _gen.getOutput();
+        swAct   = _gen.sweepActive();
+        swLog   = _gen.sweepIsLog();
+        swF0    = _gen.sweepF0();
+        swF1    = _gen.sweepF1();
+        swT     = _gen.sweepDurMs();
+        swPct   = _gen.sweepProgress();
+    });
+
     String j = "{";
-    j += "\"freq\":" + String(_gen.getFrequency(), 2) + ",";
-    j += "\"wave\":\"" + String(_gen.waveLabel()) + "\",";
-    j += "\"step\":\"" + String(_gen.stepLabel()) + "\",";
-    j += "\"waveIdx\":" + String((int)_gen.getWave()) + ",";
-    j += "\"stepIdx\":" + String((int)_gen.getStep()) + ",";
+    j += "\"freq\":"      + String(freq, 2)    + ",";
+    j += "\"wave\":\""    + String(waveLbl)    + "\",";
+    j += "\"step\":\""    + String(stepLbl)    + "\",";
+    j += "\"waveIdx\":"   + String(waveIdx)    + ",";
+    j += "\"stepIdx\":"   + String(stepIdx)    + ",";
+    j += "\"out\":"       + String(outOn ? "true" : "false") + ",";
+    j += "\"sweep\":{";
+    j += "\"active\":"   + String(swAct ? "true" : "false") + ",";
+    j += "\"f0\":"       + String(swF0, 1)  + ",";
+    j += "\"f1\":"       + String(swF1, 1)  + ",";
+    j += "\"t\":"        + String(swT)      + ",";
+    j += "\"mode\":\""  + String(swLog ? "log" : "lin") + "\",";
+    j += "\"progress\":" + String(swPct);
+    j += "},";
     j += "\"sys\":{";
-    j += "\"ssid\":\"" + String(WIFI_SSID) + "\",";
-    j += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
-    j += "\"rssi\":" + String(rssi) + ",";
-    j += "\"cpu\":" + String(_cpuLoad) + ",";
-    j += "\"freeHeap\":" + String(freeHeap) + ",";
-    j += "\"totalHeap\":" + String(totalHeap) + ",";
-    j += "\"temp\":" + String(temp, 1) + ",";
-    j += "\"uptime\":" + String(uptime);
+    j += "\"ssid\":\""    + String(WIFI_SSID)                + "\",";
+    j += "\"ip\":\""      + WiFi.localIP().toString()        + "\",";
+    j += "\"rssi\":"      + String(rssi)                     + ",";
+    j += "\"cpu\":"       + String(_cpuLoad)                 + ",";
+    j += "\"freeHeap\":"  + String(freeHeap)                 + ",";
+    j += "\"totalHeap\":" + String(totalHeap)                + ",";
+    j += "\"temp\":"      + String(temp, 1)                  + ",";
+    j += "\"uptime\":"    + String(uptime);
     j += "}}";
 
     _server.sendHeader("Access-Control-Allow-Origin", "*");
@@ -480,74 +797,173 @@ void WebUI::_handleStatus() {
 }
 
 void WebUI::_handleSetFreq() {
-    if (_server.hasArg("v")) {
-        _gen.setFrequency(_server.arg("v").toFloat());
-        Serial.printf("[Web] freq → %.2f Hz\n", _gen.getFrequency());
+    if (!_server.hasArg("v")) {
+        _server.send(400, "text/plain", "missing arg v");
+        return;
     }
-    _server.send(200, "text/plain", "ok");
+    float requested = _server.arg("v").toFloat();
+    float applied = 0;
+    // Read the applied value inside the mutex — reading it after _withGen
+    // would race with the UI task on core 1
+    _withGen([&](){ applied = _gen.setFrequency(requested); });
+    _changedFlag = true;
+    Serial.printf("[Web] freq → %.2f Hz (requested %.2f)\n",
+                  applied, requested);
+    _handleStatus();   // reply with the state that was actually applied
 }
 
 void WebUI::_handleSetWave() {
-    if (_server.hasArg("v")) {
-        _gen.setWaveByIndex(_server.arg("v").toInt());
-        Serial.printf("[Web] wave → %s\n", _gen.waveLabel());
+    if (!_server.hasArg("v")) {
+        _server.send(400, "text/plain", "usage: /set/wave?v=sine|tri|sqr|sqr2");
+        return;
     }
-    _server.send(200, "text/plain", "ok");
+    String v = _server.arg("v");
+    v.toLowerCase();
+    int idx = -1;
+    if      (v == "sine" || v == "sin")                       idx = WAVE_SINE;
+    else if (v == "tri"  || v == "triangle")                  idx = WAVE_TRIANGLE;
+    else if (v == "sqr"  || v == "square")                    idx = WAVE_SQUARE;
+    else if (v == "sqr2" || v == "square2" || v == "sqr/2")   idx = WAVE_SQUARE2;
+    else if (v.length() && isDigit(v[0]))                     idx = v.toInt();  // legacy 0-3
+    if (idx < 0 || idx >= WAVE_COUNT) {
+        _server.send(400, "text/plain", "bad wave: sine|tri|sqr|sqr2 (or 0-3)");
+        return;
+    }
+    const char* lbl = "";
+    _withGen([&](){ _gen.setWaveByIndex(idx); lbl = _gen.waveLabel(); });
+    _changedFlag = true;
+    Serial.printf("[Web] wave → %s\n", lbl);
+    _handleStatus();
 }
 
 void WebUI::_handleSetStep() {
-    if (_server.hasArg("v")) {
-        _gen.setStepByIndex(_server.arg("v").toInt());
-        Serial.printf("[Web] step → %s\n", _gen.stepLabel());
+    if (!_server.hasArg("v")) {
+        _server.send(400, "text/plain",
+            "usage: /set/step?v=0.1|1|10|100|1k|10k|100k|1m (Hz per encoder click)");
+        return;
     }
-    _server.send(200, "text/plain", "ok");
+    String v = _server.arg("v");
+    v.toLowerCase();
+    // Encoder step: how many Hz the frequency moves per detent
+    static const char* names[STEP_COUNT] =
+        {"0.1", "1", "10", "100", "1k", "10k", "100k", "1m"};
+    int idx = -1;
+    for (int i = 0; i < STEP_COUNT; i++)
+        if (v == names[i]) { idx = i; break; }
+    if (idx < 0 && v.length() && isDigit(v[0]) && v.length() == 1)
+        idx = v.toInt();                                      // legacy 0-7
+    if (idx < 0 || idx >= STEP_COUNT) {
+        _server.send(400, "text/plain",
+            "bad step: 0.1|1|10|100|1k|10k|100k|1m (or 0-7)");
+        return;
+    }
+    const char* lbl = "";
+    _withGen([&](){ _gen.setStepByIndex(idx); lbl = _gen.stepLabel(); });
+    _changedFlag = true;
+    Serial.printf("[Web] step → %s\n", lbl);
+    _handleStatus();
 }
 
 void WebUI::_handleSave() {
-    _gen.saveSettings();
+    _withGen([&](){ _gen.saveSettings(); });
     _server.send(200, "text/plain", "ok");
 }
 
-// ── CPU load monitor ─────────────────────────────────────
-// Static counters incremented by FreeRTOS idle hooks (one per core)
-volatile uint32_t WebUI::_s_idle0 = 0;
-volatile uint32_t WebUI::_s_idle1 = 0;
+void WebUI::_handleReboot() {
+    // Save first: autosave is debounced by 5 s, so a reboot right after a
+    // frequency change would otherwise lose it
+    _withGen([&](){ _gen.saveSettings(); });
+    _server.send(200, "text/plain", "rebooting");
+    _server.client().stop();     // flush the response before restarting
+    Serial.println("[Web] reboot requested");
+    delay(200);
+    ESP.restart();
+}
 
-bool IRAM_ATTR WebUI::_idleHook0() { _s_idle0++; return false; }
-bool IRAM_ATTR WebUI::_idleHook1() { _s_idle1++; return false; }
+void WebUI::_handleSetOut() {
+    if (!_server.hasArg("v")) {
+        _server.send(400, "text/plain", "missing arg v (0|1)");
+        return;
+    }
+    bool on = _server.arg("v").toInt() != 0;
+    _withGen([&](){ _gen.setOutput(on); });
+    _changedFlag = true;
+    _handleStatus();
+}
+
+void WebUI::_handleSweepStart() {
+    if (!_server.hasArg("f0") || !_server.hasArg("f1") || !_server.hasArg("t")) {
+        _server.send(400, "text/plain", "need args: f0, f1, t (seconds)");
+        return;
+    }
+    float f0 = _server.arg("f0").toFloat();
+    float f1 = _server.arg("f1").toFloat();
+    float ts = _server.arg("t").toFloat();
+    bool  lg = _server.arg("mode") == "log";
+    if (lg && (f0 <= 0 || f1 <= 0)) {
+        _server.send(400, "text/plain", "log sweep needs f0,f1 > 0");
+        return;
+    }
+
+    bool ok = false;
+    _withGen([&](){ ok = _gen.sweepStart(f0, f1, (uint32_t)(ts * 1000.0f), lg); });
+    if (!ok) {
+        _server.send(400, "text/plain",
+                     "bad sweep params (freq 0.1-12e6 Hz, t 0.2-3600 s, f0 != f1)");
+        return;
+    }
+    _changedFlag = true;
+    _handleStatus();
+}
+
+void WebUI::_handleSweepStop() {
+    _withGen([&](){ _gen.sweepStop(); });
+    _changedFlag = true;
+    _handleStatus();
+}
+
+// ── CPU load monitor ──────────────────────────────────────
+bool IRAM_ATTR WebUI::_idleHook0() { _s_idle0 = _s_idle0 + 1; return false; }
+bool IRAM_ATTR WebUI::_idleHook1() { _s_idle1 = _s_idle1 + 1; return false; }
 
 void WebUI::_initCpuMon() {
-    _cpuLoad      = 0;
-    _cpuSampleMs  = millis();
-    _cpuIdle0Prev = 0;
-    _cpuIdle1Prev = 0;
-    _cpuIdleMax   = 0;   // calibrated on first call
+    _cpuLoad        = 0;
+    _cpuSampleMs    = millis();
+    _cpuIdle0Prev   = 0;
+    _cpuIdle1Prev   = 0;
+    _cpuIdleRateMax = 0.0f;
+    _cpuFirstSample = true;
 
     esp_register_freertos_idle_hook_for_cpu(_idleHook0, 0);
     esp_register_freertos_idle_hook_for_cpu(_idleHook1, 1);
 }
 
-// Call every loop() — computes CPU load every 2 seconds
 void WebUI::updateCpuLoad() {
     uint32_t now = millis();
-    if (now - _cpuSampleMs < 2000) return;
+    uint32_t elapsed = now - _cpuSampleMs;
+    if (elapsed < 2000) return;
 
     uint32_t i0 = _s_idle0;
     uint32_t i1 = _s_idle1;
-    uint32_t delta0 = i0 - _cpuIdle0Prev;
-    uint32_t delta1 = i1 - _cpuIdle1Prev;
-    uint32_t idleTotal = delta0 + delta1;
-
-    // First call: calibrate (system is ~idle during begin())
-    if (_cpuIdleMax == 0) {
-        _cpuIdleMax = idleTotal;
-        if (_cpuIdleMax == 0) _cpuIdleMax = 1;
-    }
-
-    int load = 100 - (int)((float)idleTotal / _cpuIdleMax * 100.0f);
-    _cpuLoad = constrain(load, 0, 100);
-
+    uint32_t idleTotal = (i0 - _cpuIdle0Prev) + (i1 - _cpuIdle1Prev);
     _cpuIdle0Prev = i0;
     _cpuIdle1Prev = i1;
     _cpuSampleMs  = now;
+
+    // Idle-tick rate normalised by the time actually elapsed (ticks/ms).
+    // The first interval is skipped because it contains the blocking WiFi
+    // connect (up to 8 s) and would poison the baseline. The baseline then
+    // self-corrects upward whenever the system turns out to be even more
+    // idle than it was at calibration time.
+    float rate = (float)idleTotal / (float)elapsed;
+
+    if (_cpuFirstSample) {
+        _cpuFirstSample = false;
+        return;
+    }
+    if (rate > _cpuIdleRateMax) _cpuIdleRateMax = rate;
+    if (_cpuIdleRateMax <= 0.0f) return;
+
+    int load = 100 - (int)(rate / _cpuIdleRateMax * 100.0f);
+    _cpuLoad = constrain(load, 0, 100);
 }

@@ -1,0 +1,36 @@
+name: PlatformIO Build
+
+on:
+  push:
+    branches: [develop, master, main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Кэш тулчейна и библиотек: первая сборка ~5 мин, дальше ~1 мин
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            .pio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      # config.h закоммичен с заглушками SSID/пароля — сборке этого достаточно.
+      # Если secrets вынесем в отдельный файл, здесь появится генерация болванки.
+      - name: Build firmware
+        run: pio run
+
+      - name: Report size
+        run: pio run --target size | tail -20
