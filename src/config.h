@@ -1,8 +1,8 @@
 #pragma once
 
 // ── Wi-Fi ─────────────────────────────────────────────────
-#define WIFI_SSID      "SkyNet"
-#define WIFI_PASSWORD  "password"
+#define WIFI_SSID      "your-ssid"
+#define WIFI_PASSWORD  "your-password"
 
 // ── Web server ────────────────────────────────────────────
 #define WEB_PORT                80
