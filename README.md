@@ -273,7 +273,3 @@ At 115200 baud the device prints events:
 ```
 
 ---
-
-## License
-
-MIT License — free for personal and commercial use.
